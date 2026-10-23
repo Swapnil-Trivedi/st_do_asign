@@ -1,31 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
 import { HealthDot } from '../components/HealthDot'
 import { PlaneTag } from '../components/PlaneTag'
-import { checkHealth, type HealthState } from '../lib/api'
 import { SERVICES, TOPOLOGY_EDGES, type ServiceDef } from '../lib/config'
+import { usePipeline } from '../state/PipelineContext'
 
 const SERVICE_LIST = Object.values(SERVICES) as ServiceDef[]
 
 export function Overview() {
-  const [health, setHealth] = useState<Record<string, HealthState>>({})
-
-  const refresh = useCallback(async () => {
-    const next: Record<string, HealthState> = {}
-    await Promise.all(
-      SERVICE_LIST.map(async (s) => {
-        next[s.id] = 'checking'
-        setHealth((h) => ({ ...h, [s.id]: 'checking' }))
-        next[s.id] = await checkHealth(s.hostUrl, s.healthPath, 'planned' in s && !!s.planned)
-      }),
-    )
-    setHealth(next)
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-    const id = setInterval(() => void refresh(), 5000)
-    return () => clearInterval(id)
-  }, [refresh])
+  const {
+    health,
+    refreshHealth,
+    jobs,
+    isManaged,
+    isBusy,
+    runPipelineUp,
+    runPipelineDown,
+    runPipelineBuild,
+    runServiceUp,
+    runServiceDown,
+    runServiceBuild,
+    lastError,
+  } = usePipeline()
 
   return (
     <div className="page">
@@ -33,48 +27,144 @@ export function Overview() {
         <div>
           <h1>Overview</h1>
           <p className="muted">
-            Docker Compose topology on <code>st_net</code>. Green = reachable health check; red = down;
-            amber = planned.
+            Control the pipeline from here. Managed services start/stop via <code>console-api</code>{' '}
+            (scratch + docker.sock). Health and jobs persist across page navigation.
           </p>
         </div>
-        <button type="button" className="btn" onClick={() => void refresh()}>
+        <button type="button" className="btn btn--ghost" onClick={() => void refreshHealth()}>
           Refresh health
         </button>
       </header>
 
       <section className="panel">
+        <div className="panel__toolbar">
+          <h2>Full pipeline</h2>
+        </div>
+        <p className="muted" style={{ marginBottom: '0.75rem' }}>
+          Managed: <code>mock-server</code>, <code>vegeta-client</code>. Does not stop{' '}
+          <code>console-api</code>.
+        </p>
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn"
+            disabled={isBusy('all')}
+            onClick={() => void runPipelineUp(true)}
+          >
+            Build &amp; start all
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={isBusy('all')}
+            onClick={() => void runPipelineUp(false)}
+          >
+            Start all
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={isBusy('all')}
+            onClick={() => void runPipelineBuild()}
+          >
+            Build images
+          </button>
+          <button
+            type="button"
+            className="btn btn--danger"
+            disabled={isBusy('all')}
+            onClick={() => void runPipelineDown()}
+          >
+            Stop all
+          </button>
+        </div>
+        {lastError ? <p className="error" style={{ marginTop: '0.75rem' }}>{lastError}</p> : null}
+      </section>
+
+      <section className="panel">
         <h2>Containers</h2>
         <div className="svc-grid">
-          {SERVICE_LIST.map((s) => (
-            <article key={s.id} className="svc-card">
-              <div className="svc-card__top">
-                <strong>{s.name}</strong>
-                <PlaneTag plane={s.plane} />
-              </div>
-              <p className="muted">{s.role}</p>
-              <HealthDot state={health[s.id] ?? 'checking'} />
-              <dl className="meta-list">
-                <div>
-                  <dt>container</dt>
-                  <dd>
-                    <code>{s.container}</code>
-                  </dd>
+          {SERVICE_LIST.map((s) => {
+            const managed = isManaged(s.id)
+            const busy = isBusy(s.id) || isBusy('all')
+            const h = health[s.id] ?? 'checking'
+            return (
+              <article key={s.id} className="svc-card">
+                <div className="svc-card__top">
+                  <strong>{s.name}</strong>
+                  <PlaneTag plane={s.plane} />
                 </div>
-                <div>
-                  <dt>host</dt>
-                  <dd>
-                    <code>{s.hostUrl}</code>
-                  </dd>
-                </div>
-                <div>
-                  <dt>st_net</dt>
-                  <dd>
-                    <code>{s.networkUrl}</code>
-                  </dd>
-                </div>
-              </dl>
-            </article>
-          ))}
+                <p className="muted">{s.role}</p>
+                <HealthDot state={h} />
+                <dl className="meta-list">
+                  <div>
+                    <dt>container</dt>
+                    <dd>
+                      <code>{s.container}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>host</dt>
+                    <dd>
+                      <code>{s.hostUrl}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>st_net</dt>
+                    <dd>
+                      <code>{s.networkUrl}</code>
+                    </dd>
+                  </div>
+                </dl>
+
+                {managed ? (
+                  <div className="svc-card__actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy || h === 'healthy'}
+                      onClick={() => void runServiceUp(s.id, false)}
+                      title={h === 'healthy' ? 'Already healthy' : 'Start container'}
+                    >
+                      Start
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      disabled={busy}
+                      onClick={() => void runServiceUp(s.id, true)}
+                    >
+                      Rebuild &amp; start
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      disabled={busy}
+                      onClick={() => void runServiceBuild(s.id)}
+                    >
+                      Build
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--danger"
+                      disabled={busy || h === 'down' || h === 'checking'}
+                      onClick={() => void runServiceDown(s.id)}
+                    >
+                      Stop
+                    </button>
+                  </div>
+                ) : (
+                  <p className="svc-card__note muted">
+                    {'planned' in s && s.planned
+                      ? 'Planned — not managed yet'
+                      : s.id === 'console-api'
+                        ? 'Keep running — orchestrates siblings'
+                        : 'Not managed from UI'}
+                  </p>
+                )}
+              </article>
+            )
+          })}
         </div>
       </section>
 
@@ -84,13 +174,10 @@ export function Overview() {
           {TOPOLOGY_EDGES.map((e) => {
             const fromH = health[e.from] ?? 'checking'
             const toH = health[e.to] ?? 'checking'
-            const ok =
-              (fromH === 'healthy' || fromH === 'planned') &&
-              (toH === 'healthy' || toH === 'planned')
             const edgeClass =
               fromH === 'planned' || toH === 'planned'
                 ? 'topo__edge--planned'
-                : ok && fromH === 'healthy' && toH === 'healthy'
+                : fromH === 'healthy' && toH === 'healthy'
                   ? 'topo__edge--up'
                   : 'topo__edge--down'
             return (
@@ -111,6 +198,29 @@ export function Overview() {
             )
           })}
         </div>
+      </section>
+
+      <section className="panel">
+        <h2>Recent jobs</h2>
+        {jobs.length === 0 ? (
+          <p className="muted">No jobs yet. Start/stop a service to see output here.</p>
+        ) : (
+          <div className="job-list">
+            {jobs.slice(0, 8).map((j) => (
+              <details key={j.id} className="job-item">
+                <summary>
+                  <span className={`job-chip job-chip--${j.status}`}>{j.status}</span>
+                  <strong>
+                    {j.action} · {j.target}
+                  </strong>
+                  <code>{j.id.slice(0, 8)}</code>
+                </summary>
+                {j.error ? <p className="error">{j.error}</p> : null}
+                <pre className="docs__pre">{j.output || '(no output yet)'}</pre>
+              </details>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   )
