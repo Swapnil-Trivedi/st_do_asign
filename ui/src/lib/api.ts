@@ -68,6 +68,30 @@ export async function listVegetaRuns() {
   return res.json() as Promise<{ runs: unknown[] }>
 }
 
+export async function deleteVegetaRun(id: string) {
+  const res = await fetch(`${SERVICES.vegetaClient.hostUrl}/api/v1/runs/${id}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok && res.status !== 204) {
+    let msg = `delete ${res.status}`
+    try {
+      const data = await res.json()
+      if (data?.error) msg = data.error
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg)
+  }
+}
+
+export async function clearVegetaRuns() {
+  const res = await fetch(`${SERVICES.vegetaClient.hostUrl}/api/v1/runs/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`clear ${res.status}`)
+  return res.json() as Promise<{ deleted: number }>
+}
+
 export type VegetaScenario = {
   id: string
   name: string

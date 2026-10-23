@@ -84,3 +84,38 @@ func (s *runStore) stop(id string) (RunView, error) {
 	rec.mu.Unlock()
 	return rec.snapshot(), nil
 }
+
+func (s *runStore) delete(id string) error {
+	s.mu.Lock()
+	rec, ok := s.runs[id]
+	if !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("run not found")
+	}
+	delete(s.runs, id)
+	s.mu.Unlock()
+
+	rec.cancel()
+	rec.mu.Lock()
+	if rec.attacker != nil {
+		rec.attacker.Stop()
+	}
+	rec.mu.Unlock()
+	return nil
+}
+
+func (s *runStore) clear() int {
+	s.mu.Lock()
+	n := len(s.runs)
+	for _, rec := range s.runs {
+		rec.cancel()
+		rec.mu.Lock()
+		if rec.attacker != nil {
+			rec.attacker.Stop()
+		}
+		rec.mu.Unlock()
+	}
+	s.runs = map[string]*runRecord{}
+	s.mu.Unlock()
+	return n
+}

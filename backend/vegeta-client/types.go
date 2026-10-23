@@ -60,6 +60,8 @@ type CreateRunRequest struct {
 type RunMetrics struct {
 	Requests    uint64         `json:"requests"`
 	Success     float64        `json:"successRatio"`
+	LatencyMin  string         `json:"latencyMin"`
+	LatencyMean string         `json:"latencyMean"`
 	LatencyP50  string         `json:"latencyP50"`
 	LatencyP95  string         `json:"latencyP95"`
 	LatencyP99  string         `json:"latencyP99"`

@@ -160,6 +160,8 @@ func metricsFrom(m *vegeta.Metrics) *RunMetrics {
 	return &RunMetrics{
 		Requests:    m.Requests,
 		Success:     m.Success,
+		LatencyMin:  m.Latencies.Min.String(),
+		LatencyMean: m.Latencies.Mean.String(),
 		LatencyP50:  m.Latencies.P50.String(),
 		LatencyP95:  m.Latencies.P95.String(),
 		LatencyP99:  m.Latencies.P99.String(),

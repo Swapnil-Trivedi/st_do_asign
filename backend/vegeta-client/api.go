@@ -26,8 +26,10 @@ func (a *api) routes(r chi.Router) {
 	r.Route("/api/v1/runs", func(r chi.Router) {
 		r.Get("/", a.listRuns)
 		r.Post("/", a.createRun)
+		r.Delete("/", a.clearRuns)
 		r.Get("/{id}", a.getRun)
 		r.Post("/{id}/stop", a.stopRun)
+		r.Delete("/{id}", a.deleteRun)
 	})
 }
 
@@ -137,6 +139,19 @@ func (a *api) stopRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+func (a *api) deleteRun(w http.ResponseWriter, r *http.Request) {
+	if err := a.store.delete(chi.URLParam(r, "id")); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *api) clearRuns(w http.ResponseWriter, _ *http.Request) {
+	n := a.store.clear()
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

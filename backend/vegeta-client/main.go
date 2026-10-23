@@ -30,7 +30,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,
@@ -45,6 +45,8 @@ func main() {
 	log.Printf("  POST /api/v1/runs")
 	log.Printf("  GET  /api/v1/runs/{id}")
 	log.Printf("  POST /api/v1/runs/{id}/stop")
+	log.Printf("  DELETE /api/v1/runs/{id}")
+	log.Printf("  DELETE /api/v1/runs")
 
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("listen: %v", err)
