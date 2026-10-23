@@ -6,33 +6,40 @@ Production-style rate limiting stack: **control plane** (config) + **data plane*
 |-----|---------|
 | [`architecture.md`](architecture.md) | Design notes |
 | [`ratelimiter-schema.md`](ratelimiter-schema.md) | MongoDB control-plane schema |
+| [`redis-schema.md`](redis-schema.md) | Redis keys, Lua algorithms, peek/consume |
+| [`sequences.md`](sequences.md) | End-to-end sequence diagrams (client → proxy → Redis/Mongo) |
 | [`report.html`](report.html) | Slide deck (open in browser) |
 
 ## Prerequisites
 
 - **Go** 1.27+ (`go version`)
 - **Docker** + Compose (`docker compose version`)
-- **Node.js** 20+ (React UI — later)
+- **Node.js** 20+ (React console)
 - Optional: `curl` for smoke checks
 
 ## Repository layout
 
 ```
 st_do_asign/
-├── architecture.md
-├── report.html
+├── architecture.md              # planes + topology
+├── ratelimiter-schema.md        # Mongo policy + APIs
+├── redis-schema.md              # Redis keys + Lua
+├── sequences.md                 # end-to-end sequences
+├── report.html                  # slide deck
 ├── build/
 │   ├── build.sh
 │   ├── docker-compose.yml       # network: st_net
-│   ├── Dockerfile.mock-server   # scratch
-│   ├── Dockerfile.vegeta-client # scratch
-│   ├── Dockerfile.console-api   # scratch (+ docker.sock at runtime)
+│   ├── nginx/rate-limiter.conf  # LB → proxy replicas
+│   ├── mongo/001_seed.js
+│   ├── Dockerfile.*             # scratch apps + rate-limiter / LB
 │   └── out/                     # local binaries (gitignored)
 ├── backend/
+│   ├── rate-limiter/            # inline proxy + Redis Lua + quota peek
+│   ├── control-plane/           # Mongo admin CRUD
 │   ├── mock-server/             # Chi mock upstream
-│   ├── vegeta-client/           # loadgen control API (steady/ramp/burst)
-│   └── console-api/             # pipeline control via Docker Engine API
-└── ui/                          # React console (scaffold)
+│   ├── vegeta-client/           # loadgen control API
+│   └── console-api/             # pipeline control via docker.sock
+└── ui/                          # React console
 ```
 
 ## Build script
@@ -42,7 +49,7 @@ chmod +x build/build.sh   # once
 
 ./build/build.sh deps
 ./build/build.sh test
-./build/build.sh build    # TARGET=all → mock-server + vegeta-client
+./build/build.sh build    # TARGET=all → all Go services + rate-limiter-lb image target
 ./build/build.sh image
 ./build/build.sh up
 ./build/build.sh down
@@ -50,8 +57,8 @@ chmod +x build/build.sh   # once
 ```
 
 ```bash
-TARGET=mock-server ./build/build.sh build
-TARGET=vegeta-client ./build/build.sh image
+TARGET=rate-limiter ./build/build.sh build
+TARGET=control-plane ./build/build.sh image
 TARGET=all ./build/build.sh build
 ```
 
@@ -65,20 +72,63 @@ All services join the bridge network **`st_net`** and reach each other by **serv
 |---------|-----------|----------------|
 | `mongo` | `27017` | `mongo:27017` (db `rate_limiter`) |
 | `redis` | `6379` | `redis:6379` |
+| `rate-limiter` (nginx LB) | `8080` | `http://rate-limiter:8080` |
+| `rate-limiter-a` / `-b` | `18080` / `18081` | `http://rate-limiter-a:8080` (replicas) |
 | `mock-server` | `8081` | `http://mock-server:8081` |
 | `vegeta-client` | `8090` | `http://vegeta-client:8090` |
+| `control-plane` | `8091` | `http://control-plane:8091` |
 | `console-api` | `8095` | `http://console-api:8095` |
-| `rate-limiter` (next) | `8080` | `http://rate-limiter:8080` |
+
+## Assignment coverage
+
+| Requirement | Status | Where |
+|-------------|--------|--------|
+| **Quota enforcement** — identifier + namespace → allow/deny, remaining, reset; ≥2 algorithms | Done | Proxy path: match → Redis Lua (`fixed_token`, `fixed_window`, `sliding_window`). Headers `X-RateLimit-*`. Subject from API key / tenant / path. |
+| **Configuration API** — CRUD rules at runtime, no restart; burst + sustained | Done | Control plane `:8091` CRUD for configs/namespaces/rules. `fixed_token` params: `sustainedRps` + `burst`. Proxy polls Mongo every 2s (atomic snapshot swap). |
+| **Multi-instance correctness** — shared state across ≥2 instances | Done | `rate-limiter-a` + `rate-limiter-b` behind nginx `rate-limiter`; all `EVAL` against the same Redis keys. |
+| **Observable quota state** — consumption / remaining / reset for an identifier | Done | `GET http://localhost:8080/api/v1/quota?namespace=demo-deviceList&apiKey=ak_demo_1001_alpha` (peek, does not consume). |
+
+```bash
+# Enforce (allow → mock upstream; deny → 429)
+curl -sS -D- -H 'US-API-Key: ak_demo_1001_alpha' http://localhost:8080/1001/deviceList
+
+# Observe quota (no consume)
+curl -sS 'http://localhost:8080/api/v1/quota?namespace=demo-deviceList&apiKey=ak_demo_1001_alpha'
+
+# Hot-reload config (no proxy restart)
+curl -sS -X PUT http://localhost:8091/api/v1/namespaces/<id> \
+  -H 'Content-Type: application/json' -d '{"enabled":false}'
+# wait ≤2s — proxy picks up the change
+```
+
+### Control-plane test suites
+
+Console **Testing** tab (or curl) runs suites against the live control-plane:
+
+| Suite | Coverage |
+|-------|----------|
+| `unit` | Validators + in-memory API |
+| `functional` | Live store CRUD / conflicts |
+| `concurrency` | Parallel writers |
+| `e2e` | CP → Mongo → rate-limiter → mock (quota, allow, 429) |
+| `all` | Everything above |
+
+```bash
+curl -sS -X POST 'http://localhost:8091/api/v1/tests/run?suite=e2e' | jq .
+# or: suite=all
+```
+
+E2E needs the compose stack up (`RATE_LIMITER_URL` on control-plane). Offline / memory-only runs **skip** stack cases instead of failing CI.
 
 ```bash
 ./build/build.sh up
 ```
 
-Env for vegeta (compose default until the proxy exists):
+Env for vegeta:
 
 | Variable | Default in compose | Meaning |
 |----------|--------------------|---------|
-| `RATE_LIMITER_URL` | `http://mock-server:8081` | Base URL loadgen attacks (switch to `http://rate-limiter:8080` later) |
+| `RATE_LIMITER_URL` | `http://rate-limiter:8080` | Base URL loadgen attacks |
 | `VEGETA_CLIENT_ADDR` | `0.0.0.0:8090` | Control API listen address |
 | `MOCK_SERVER_ADDR` | `0.0.0.0:8081` | Mock upstream listen address |
 | `MONGO_ROOT_USER` / `MONGO_ROOT_PASSWORD` | `root` / `stroot` | Mongo root (local demo) |
@@ -92,8 +142,9 @@ docker exec st-mongo mongosh -u root -p stroot --authenticationDatabase admin ra
 docker exec st-redis redis-cli PING
 ```
 
-All runtime images are **`FROM scratch`** (mock-server, vegeta-client, console-api).  
-`console-api` talks to the Docker Engine over a mounted `docker.sock` — no Docker CLI / Alpine in the image (~10MB).
+Go app images are **`FROM scratch`** (mock-server, vegeta-client, console-api, control-plane, rate-limiter).  
+LB image is **nginx** (`rate-limiter` / `Dockerfile.rate-limiter-lb`).  
+`console-api` talks to the Docker Engine over a mounted `docker.sock`.
 
 ```bash
 ./build/build.sh down
@@ -128,9 +179,19 @@ curl -D - -H "US-API-Key: ak_demo_1001_alpha" \
   http://localhost:8081/1001/deviceList
 ```
 
+## Rate limiter (data plane)
+
+Nginx LB on `:8080` → `rate-limiter-a` / `rate-limiter-b` (shared Redis). Policy from Mongo (2s poll). Details: [`redis-schema.md`](redis-schema.md), [`sequences.md`](sequences.md).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/healthz` | Liveness (`instance` = `a` \| `b`) |
+| `GET` | `/api/v1/quota` | Peek quota (no consume) |
+| `*` | `/*` | Match → Lua → forward or `429` |
+
 ## Vegeta client (loadgen)
 
-Control API designed for the **Data Plane** UI tab. Sends traffic at configurable RPS through the rate limiter URL (compose DNS).
+Control API for the **Data Plane** UI tab. Default target is the rate-limiter LB (`RATE_LIMITER_URL=http://rate-limiter:8080`).
 
 | Setting | Value |
 |---------|--------|
@@ -145,7 +206,7 @@ Control API designed for the **Data Plane** UI tab. Sends traffic at configurabl
 | `ramp` | `ramp` | Linear RPS from `fromRps` → `toRps` over `steps` × `stepDuration` |
 | `burst` | `burst` | `baseRps` with spikes of `burstRps` every `burstEvery` for `burstDuration` |
 
-### Control API (UI-ready)
+### Control API
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -157,7 +218,7 @@ Control API designed for the **Data Plane** UI tab. Sends traffic at configurabl
 | `GET` | `/api/v1/runs/{id}` | Poll status + metrics |
 | `POST` | `/api/v1/runs/{id}/stop` | Cancel in-flight run |
 
-### Example — steady via mock (compose network name)
+### Example — steady through the rate limiter
 
 ```bash
 curl -s -X POST http://localhost:8090/api/v1/runs \
@@ -165,7 +226,7 @@ curl -s -X POST http://localhost:8090/api/v1/runs \
   -d '{
     "profile": "steady",
     "target": {
-      "baseUrl": "http://mock-server:8081",
+      "baseUrl": "http://rate-limiter:8080",
       "method": "GET",
       "path": "/1001/deviceList",
       "headers": { "US-API-Key": "ak_demo_1001_alpha" }
@@ -174,29 +235,29 @@ curl -s -X POST http://localhost:8090/api/v1/runs \
   }'
 ```
 
-Ramp / burst:
+Ramp / burst (same target; alternate keys may `404` if they do not match seeded rules):
 
 ```bash
 # ramp
 curl -s -X POST http://localhost:8090/api/v1/runs -H 'Content-Type: application/json' -d '{
   "profile": "ramp",
   "target": {
-    "baseUrl": "http://mock-server:8081",
+    "baseUrl": "http://rate-limiter:8080",
     "method": "GET",
     "path": "/1001/deviceList",
-    "headers": { "US-API-Key": "ak_demo_1001_mobile" }
+    "headers": { "US-API-Key": "ak_demo_1001_alpha" }
   },
   "ramp": { "fromRps": 2, "toRps": 20, "steps": 4, "stepDuration": "3s" }
 }'
 
-# burst
+# burst — expect 429s when over burst=20
 curl -s -X POST http://localhost:8090/api/v1/runs -H 'Content-Type: application/json' -d '{
   "profile": "burst",
   "target": {
-    "baseUrl": "http://mock-server:8081",
+    "baseUrl": "http://rate-limiter:8080",
     "method": "GET",
-    "path": "/1002/deviceList",
-    "headers": { "US-API-Key": "ak_demo_1002_ci" }
+    "path": "/1001/deviceList",
+    "headers": { "US-API-Key": "ak_demo_1001_alpha" }
   },
   "burst": {
     "baseRps": 5, "burstRps": 40,
@@ -205,11 +266,10 @@ curl -s -X POST http://localhost:8090/api/v1/runs -H 'Content-Type: application/
 }'
 ```
 
-When the inline proxy lands, set:
+Override target (e.g. hit mock directly):
 
 ```bash
-RATE_LIMITER_URL=http://rate-limiter:8080 ./build/build.sh up
-# or export in a .env next to compose
+RATE_LIMITER_URL=http://mock-server:8081 ./build/build.sh up
 ```
 
 ## Configuration summary
@@ -219,9 +279,12 @@ RATE_LIMITER_URL=http://rate-limiter:8080 ./build/build.sh up
 | `st_net` | Compose network | Service-name DNS |
 | `MOCK_SERVER_ADDR` | mock-server | Listen address |
 | `VEGETA_CLIENT_ADDR` | vegeta-client | Control API listen |
-| `RATE_LIMITER_URL` | vegeta-client | Attack base URL (proxy or mock) |
+| `RATE_LIMITER_URL` | vegeta-client | Attack base URL (default LB) |
+| `RATE_LIMITER_ADDR` | rate-limiter replicas | Listen address |
+| `REDIS_ADDR` | rate-limiter replicas | Redis host |
+| `MONGO_URI` / `MONGO_DB` | control-plane + proxies | Policy store |
+| `POLICY_POLL_INTERVAL` | rate-limiter replicas | Hot-reload poll (default `2s`) |
 | `build/docker-compose.yml` | Compose | Wiring + network |
-| `backend/vegeta-client/` | loadgen | Profiles + UI control API |
 
 ## React console
 
@@ -234,17 +297,15 @@ cd ui && npm install && npm run dev
 
 | Page | Plane | What it does |
 |------|-------|----------------|
-| Overview | — | Compose containers + `st_net` connectivity; health green / red / planned |
-| Mock Backend | Data | Live logs + hardcoded API docs in the UI |
-| Vegeta Client | Data | Configure steady / ramp / burst and run / stop / metrics |
-| Control Plane | Control | Placeholder for keys / paths / rules |
+| Overview | — | Compose topology + health (incl. LB + proxy replicas) |
+| Rate Limiter | Control | Namespace / config / rule CRUD + control-plane tests |
+| Mock Backend | Data | Live logs + API docs |
+| Vegeta Client | Data | Steady / ramp / burst runs against the proxy |
 
-Env overrides: `VITE_MOCK_URL`, `VITE_VEGETA_URL`, `VITE_PROXY_URL`.
+Env overrides: `VITE_MOCK_URL`, `VITE_VEGETA_URL`, `VITE_PROXY_URL`, `VITE_CONTROL_PLANE_URL`, `VITE_CONSOLE_URL`.
 
 Mock extras: `GET /api/v1/logs`, `GET /openapi.json`, `GET /docs`.
 
 ## Status
 
-**Done:** mock upstream (+ logs/swagger), vegeta loadgen, scratch images, `st_net`, React console shell.
-
-**Next:** control-plane API, MySQL/Redis, inline `rate-limiter` proxy.
+**Done:** full demo stack — Mongo policy + control-plane CRUD/UI, Redis Lua (`fixed_token` / `fixed_window` / `sliding_window`), dual proxy replicas behind nginx, hot policy poll, `GET /api/v1/quota`, vegeta → rate-limiter → mock.

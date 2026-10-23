@@ -3,9 +3,10 @@ import { PlaneTag } from './PlaneTag'
 
 const links = [
   { to: '/', label: 'Overview', hint: 'Compose topology', plane: null as null | 'control' | 'data' },
+  { to: '/rate-limiter', label: 'Rate Limiter', hint: 'Namespaces · configs', plane: 'control' as const },
+  { to: '/testing', label: 'Testing', hint: 'Control-plane UTs', plane: 'control' as const },
   { to: '/mock-backend', label: 'Mock Backend', hint: 'Logs & API docs', plane: 'data' as const },
   { to: '/vegeta', label: 'Vegeta Client', hint: 'Load profiles', plane: 'data' as const },
-  { to: '/control-plane', label: 'Control Plane', hint: 'Keys · paths · rules', plane: 'control' as const },
 ]
 
 export function Sidebar() {

@@ -40,7 +40,7 @@ func (a *api) catalog(w http.ResponseWriter, _ *http.Request) {
 		"projectRoot":     a.orch.projectRoot,
 		"runtime":         "scratch + Docker Engine API (docker.sock)",
 		"actions": map[string]string{
-			"pipeline.up":    "Pull/build (optional) and start mongo, redis, mock-server, vegeta-client",
+			"pipeline.up":    "Pull/build (optional) and start mongo, redis, mock-server, rate-limiter-a/b, rate-limiter (LB), vegeta-client, control-plane",
 			"pipeline.down":  "Stop all managed services (infra stop keeps volumes)",
 			"pipeline.build": "Build scratch images / pull infra images",
 			"service.up":     "Start one service (rebuild or pull optional)",

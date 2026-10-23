@@ -26,7 +26,7 @@ import (
 const networkName = "st_net"
 
 // Order matters for pipeline.up: infra first, then scratch apps.
-var managedServices = []string{"mongo", "redis", "mock-server", "vegeta-client"}
+var managedServices = []string{"mongo", "redis", "mock-server", "rate-limiter-a", "rate-limiter-b", "rate-limiter", "vegeta-client", "control-plane"}
 
 type volumeBind struct {
 	Name   string // named docker volume
@@ -83,13 +83,54 @@ var serviceSpecs = map[string]serviceSpec{
 		HostPort: "8081", ContainerPort: "8081", NetworkAlias: "mock-server",
 		Env: []string{"MOCK_SERVER_ADDR=0.0.0.0:8081"},
 	},
+	"rate-limiter-a": {
+		Name: "rate-limiter-a", Image: "st-do-asign/rate-limiter:local",
+		ContainerName: "st-rate-limiter-a", Dockerfile: "build/Dockerfile.rate-limiter",
+		HostPort: "18080", ContainerPort: "8080", NetworkAlias: "rate-limiter-a",
+		Env: []string{
+			"RATE_LIMITER_ADDR=0.0.0.0:8080",
+			"INSTANCE_ID=a",
+			"MONGO_URI=mongodb://root:stroot@mongo:27017/?authSource=admin",
+			"MONGO_DB=rate_limiter",
+			"REDIS_ADDR=redis:6379",
+			"POLICY_POLL_INTERVAL=2s",
+		},
+	},
+	"rate-limiter-b": {
+		Name: "rate-limiter-b", Image: "st-do-asign/rate-limiter:local",
+		ContainerName: "st-rate-limiter-b", Dockerfile: "build/Dockerfile.rate-limiter",
+		HostPort: "18081", ContainerPort: "8080", NetworkAlias: "rate-limiter-b",
+		Env: []string{
+			"RATE_LIMITER_ADDR=0.0.0.0:8080",
+			"INSTANCE_ID=b",
+			"MONGO_URI=mongodb://root:stroot@mongo:27017/?authSource=admin",
+			"MONGO_DB=rate_limiter",
+			"REDIS_ADDR=redis:6379",
+			"POLICY_POLL_INTERVAL=2s",
+		},
+	},
+	"rate-limiter": {
+		Name: "rate-limiter", Image: "st-do-asign/rate-limiter-lb:local",
+		ContainerName: "st-rate-limiter", Dockerfile: "build/Dockerfile.rate-limiter-lb",
+		HostPort: "8080", ContainerPort: "8080", NetworkAlias: "rate-limiter",
+	},
 	"vegeta-client": {
 		Name: "vegeta-client", Image: "st-do-asign/vegeta-client:local",
 		ContainerName: "st-vegeta-client", Dockerfile: "build/Dockerfile.vegeta-client",
 		HostPort: "8090", ContainerPort: "8090", NetworkAlias: "vegeta-client",
 		Env: []string{
 			"VEGETA_CLIENT_ADDR=0.0.0.0:8090",
-			"RATE_LIMITER_URL=http://mock-server:8081",
+			"RATE_LIMITER_URL=http://rate-limiter:8080",
+		},
+	},
+	"control-plane": {
+		Name: "control-plane", Image: "st-do-asign/control-plane:local",
+		ContainerName: "st-control-plane", Dockerfile: "build/Dockerfile.control-plane",
+		HostPort: "8091", ContainerPort: "8091", NetworkAlias: "control-plane",
+		Env: []string{
+			"CONTROL_PLANE_ADDR=0.0.0.0:8091",
+			"MONGO_URI=mongodb://root:stroot@mongo:27017/?authSource=admin",
+			"MONGO_DB=rate_limiter",
 		},
 	},
 }

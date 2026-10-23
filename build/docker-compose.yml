@@ -48,6 +48,92 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  control-plane:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.control-plane
+    image: st-do-asign/control-plane:local
+    container_name: st-control-plane
+    networks:
+      - st_net
+    ports:
+      - "8091:8091"
+    environment:
+      CONTROL_PLANE_ADDR: "0.0.0.0:8091"
+      MONGO_URI: "mongodb://root:stroot@mongo:27017/?authSource=admin"
+      MONGO_DB: rate_limiter
+      RATE_LIMITER_URL: "${RATE_LIMITER_URL:-http://rate-limiter:8080}"
+      POLICY_POLL_INTERVAL: "${POLICY_POLL_INTERVAL:-2s}"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Two proxy replicas share Redis counters (multi-instance correctness).
+  rate-limiter-a:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.rate-limiter
+    image: st-do-asign/rate-limiter:local
+    container_name: st-rate-limiter-a
+    networks:
+      - st_net
+    ports:
+      - "18080:8080"
+    environment:
+      RATE_LIMITER_ADDR: "0.0.0.0:8080"
+      INSTANCE_ID: "a"
+      MONGO_URI: "mongodb://root:stroot@mongo:27017/?authSource=admin"
+      MONGO_DB: rate_limiter
+      REDIS_ADDR: "redis:6379"
+      POLICY_POLL_INTERVAL: "2s"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  rate-limiter-b:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.rate-limiter
+    image: st-do-asign/rate-limiter:local
+    container_name: st-rate-limiter-b
+    networks:
+      - st_net
+    ports:
+      - "18081:8080"
+    environment:
+      RATE_LIMITER_ADDR: "0.0.0.0:8080"
+      INSTANCE_ID: "b"
+      MONGO_URI: "mongodb://root:stroot@mongo:27017/?authSource=admin"
+      MONGO_DB: rate_limiter
+      REDIS_ADDR: "redis:6379"
+      POLICY_POLL_INTERVAL: "2s"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Public entrypoint — round-robin across rate-limiter-a/b.
+  rate-limiter:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.rate-limiter-lb
+    image: st-do-asign/rate-limiter-lb:local
+    container_name: st-rate-limiter
+    networks:
+      - st_net
+    ports:
+      - "8080:8080"
+    depends_on:
+      - rate-limiter-a
+      - rate-limiter-b
+    restart: unless-stopped
+
   mock-server:
     build:
       context: ..
@@ -74,9 +160,10 @@ services:
       - "8090:8090"
     environment:
       VEGETA_CLIENT_ADDR: "0.0.0.0:8090"
-      RATE_LIMITER_URL: "${RATE_LIMITER_URL:-http://mock-server:8081}"
+      RATE_LIMITER_URL: "${RATE_LIMITER_URL:-http://rate-limiter:8080}"
     depends_on:
       - mock-server
+      - rate-limiter
     restart: unless-stopped
 
   # Scratch image; orchestrates sibling services via Docker Engine API + docker.sock.

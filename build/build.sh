@@ -3,7 +3,7 @@
 # Usage:
 #   ./build/build.sh              # same as: all
 #   ./build/build.sh deps|test|build|image|up|down|all
-#   TARGET=mock-server|vegeta-client|console-api|all ./build/build.sh build
+#   TARGET=mock-server|vegeta-client|console-api|control-plane|rate-limiter|all ./build/build.sh build
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,9 +32,9 @@ compose() {
 
 resolve_targets() {
   case "${TARGET}" in
-    all) echo "mock-server vegeta-client console-api" ;;
-    mock-server|vegeta-client|console-api) echo "${TARGET}" ;;
-    *) die "unknown TARGET=${TARGET} (mock-server|vegeta-client|console-api|all)" ;;
+    all) echo "mock-server vegeta-client console-api control-plane rate-limiter rate-limiter-lb" ;;
+    mock-server|vegeta-client|console-api|control-plane|rate-limiter|rate-limiter-lb) echo "${TARGET}" ;;
+    *) die "unknown TARGET=${TARGET} (mock-server|vegeta-client|console-api|control-plane|rate-limiter|rate-limiter-lb|all)" ;;
   esac
 }
 
@@ -96,11 +96,15 @@ step_up() {
   log "up: docker compose (network: st_net)"
   need docker
   compose up -d --build
-  log "network DNS: mongo, redis, mock-server, vegeta-client, console-api"
+  log "network DNS: mongo, redis, mock-server, rate-limiter-a/b, rate-limiter (LB), vegeta-client, control-plane, console-api"
   log "mongo          → localhost:27017 (db=rate_limiter)"
   log "redis          → localhost:6379"
+  log "rate-limiter   → http://localhost:8080  (nginx LB → a/b)"
+  log "rate-limiter-a → http://localhost:18080"
+  log "rate-limiter-b → http://localhost:18081"
   log "mock-server    → http://localhost:8081"
   log "vegeta-client  → http://localhost:8090"
+  log "control-plane  → http://localhost:8091  (namespaces / configs)"
   log "console-api    → http://localhost:8095  (UI pipeline control)"
 }
 

@@ -8,4 +8,5 @@ import (
 	_ "github.com/redis/go-redis/v9"
 	_ "github.com/stretchr/testify/assert"
 	_ "github.com/stretchr/testify/require"
+	_ "go.mongodb.org/mongo-driver/mongo"
 )

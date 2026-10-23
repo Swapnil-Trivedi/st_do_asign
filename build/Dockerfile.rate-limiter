@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.27-alpine AS build
+WORKDIR /src
+
+RUN apk add --no-cache git ca-certificates \
+  && update-ca-certificates
+
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ ./
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+  go build -trimpath -ldflags="-s -w" -o /out/rate-limiter ./rate-limiter
+
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /out/rate-limiter /rate-limiter
+ENV RATE_LIMITER_ADDR=0.0.0.0:8080
+ENV MONGO_URI=mongodb://root:stroot@mongo:27017/?authSource=admin
+ENV MONGO_DB=rate_limiter
+ENV REDIS_ADDR=redis:6379
+ENV POLICY_POLL_INTERVAL=2s
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/rate-limiter"]

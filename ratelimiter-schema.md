@@ -368,6 +368,8 @@ db.rules.createIndex({ "match.kind": 1, "match.name": 1 })
 
 ### Redis key sketch
 
+Full Redis/Lua detail: [`redis-schema.md`](redis-schema.md).
+
 ```
 rl:{algorithm}:{namespaceId}:{subject}
 ```
@@ -428,13 +430,13 @@ docker exec st-mongo mongosh -u root -p stroot --authenticationDatabase admin ra
 
 ## Ownership matrix
 
-| Actor | Mongo access |
-|-------|----------------|
-| Control plane API | Read / write all four collections |
-| Inline rate-limiter proxy | Read-only (cached) |
-| Vegeta client | None |
-| Mock backend | None |
-| React console | Via control plane API only |
+| Actor | Mongo access | Redis access |
+|-------|----------------|--------------|
+| Control plane API | Read / write all four collections | None |
+| Rate-limiter proxies (`a`/`b`) | Read-only (2s policy cache) | Read/write via Lua (consume + peek) |
+| Vegeta client | None | None |
+| Mock backend | None | None |
+| React console | Via control plane API only | Via `GET /api/v1/quota` on proxy LB |
 
 ---
 
@@ -447,8 +449,221 @@ docker exec st-mongo mongosh -u root -p stroot --authenticationDatabase admin ra
 
 ---
 
+## Control plane API
+
+Service: `control-plane` · host `http://localhost:8091` · network `http://control-plane:8091`
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/healthz` | Liveness |
+| `GET` | `/api/v1/algorithms` | Algorithm catalog |
+| `GET` | `/api/v1/configs` | List algorithm configs |
+| `POST` | `/api/v1/configs` | Create config |
+| `GET` | `/api/v1/configs/{id}` | Get config |
+| `PUT` | `/api/v1/configs/{id}` | Update config |
+| `DELETE` | `/api/v1/configs/{id}` | Delete (fails if namespaces reference it) |
+| `GET` | `/api/v1/namespaces` | List namespaces |
+| `POST` | `/api/v1/namespaces` | Create namespace |
+| `GET` | `/api/v1/namespaces/{id}` | Get namespace |
+| `PUT` | `/api/v1/namespaces/{id}` | Update namespace |
+| `DELETE` | `/api/v1/namespaces/{id}` | Delete namespace + cascade rules |
+| `GET` | `/api/v1/namespaces/{id}/rules` | List rules |
+| `POST` | `/api/v1/namespaces/{id}/rules` | Create rule |
+| `PUT` | `/api/v1/rules/{id}` | Update rule |
+| `DELETE` | `/api/v1/rules/{id}` | Delete rule |
+| `GET` | `/api/v1/tests/catalog` | List runnable test suites |
+| `POST` | `/api/v1/tests/run?suite=unit\|functional\|concurrency\|e2e\|all` | Execute suites; each case includes description, assertions, request/response, steps |
+
+**Suites**
+
+| Suite | What it covers |
+|-------|----------------|
+| `unit` | Validators + isolated in-memory HTTP API |
+| `functional` | Live store CRUD, conflicts, in-use guards |
+| `concurrency` | Parallel writers / duplicate-name races |
+| `e2e` | Control-plane write → proxy poll → quota / allow / 429 (needs `RATE_LIMITER_URL`; skips if proxy unreachable or Mongo not shared) |
+| `all` | unit → functional → concurrency → e2e |
+
+E2E uses `RATE_LIMITER_URL` (default `http://localhost:8080` on host, `http://rate-limiter:8080` in compose) and waits ~`3 × POLICY_POLL_INTERVAL` for the proxy policy cache.
+
+Errors return `{ "error": "...", "code": "validation_error|not_found|conflict|..." }`.
+
+Console **Testing** tab calls `POST /api/v1/tests/run` and renders the report table (including skipped e2e cases).
+
+---
+
+## Data plane API (rate-limiter)
+
+Service: nginx LB `rate-limiter` · host `http://localhost:8080` · network `http://rate-limiter:8080`  
+Replicas: `rate-limiter-a` / `rate-limiter-b` (same routes; shared Redis).  
+Redis detail: [`redis-schema.md`](redis-schema.md).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/healthz` | Liveness (`{"status":"ok","instance":"a\|b"}`) |
+| `GET` | `/api/v1/quota` | **Observable quota** — peek remaining / consumed / reset (does **not** consume) |
+| `*` | `/*` | Inline proxy: match rules → Redis Lua → allow forward upstream or `429` |
+
+### `GET /api/v1/quota`
+
+Peek current Redis quota for an identifier in a namespace. Does not decrement tokens / counters.
+
+**Query params** (need `namespace` plus one identity form):
+
+| Param | Required | Meaning |
+|-------|----------|---------|
+| `namespace` | yes | Namespace **id** (hex) or **label** (e.g. `demo-deviceList`) |
+| `namespaceId` | alt | Same as `namespace` |
+| `subject` | one of | Full Redis subject, e.g. `hdr:US-API-Key:ak_demo_1001_alpha` |
+| `apiKey` | one of | Shorthand → subject `hdr:US-API-Key:{apiKey}` |
+| `header` + `value` | one of | Shorthand → `hdr:{header}:{value}` |
+| `tenant` | one of | Shorthand → `tenant:{tenant}` |
+| `path` | one of | Shorthand → `path:{path}` |
+
+```bash
+curl -sS 'http://localhost:8080/api/v1/quota?namespace=demo-deviceList&apiKey=ak_demo_1001_alpha'
+```
+
+**Example response**
+
+```json
+{
+  "namespaceId": "6adb0f30d436ed6d1d76c931",
+  "namespace": "demo-deviceList",
+  "algorithm": "fixed_token",
+  "subject": "hdr:US-API-Key:ak_demo_1001_alpha",
+  "redisKey": "rl:fixed_token:6adb0f30d436ed6d1d76c931:hdr:US-API-Key:ak_demo_1001_alpha",
+  "limit": 20,
+  "remaining": 17,
+  "consumed": 3,
+  "resetMs": 100,
+  "resetAt": "2026-10-23T08:10:05.656Z",
+  "observedAt": "2026-10-23T08:10:05.556Z",
+  "params": { "sustainedRps": 10, "burst": 20 }
+}
+```
+
+| Status | When |
+|--------|------|
+| `200` | Peek succeeded |
+| `400` | Missing `namespace` or identity |
+| `404` | Namespace not found / disabled |
+| `502` | Redis peek failed |
+| `503` | Policy cache not loaded |
+
+On the **enforce** path (any non-quota request), allow/deny also returns quota via headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, plus `X-Proxy-Instance`.
+
+---
+
+## Sequence diagrams
+
+### Create algorithm config (UI → API → Mongo)
+
+```mermaid
+sequenceDiagram
+  actor Op as Operator (UI)
+  participant UI as React Rate Limiter tab
+  participant CP as control-plane :8091
+  participant DB as MongoDB rate_limiter
+
+  Op->>UI: Fill name, algorithm, params
+  UI->>CP: POST /api/v1/configs
+  CP->>CP: validateConfigInput(algorithm, params)
+  alt invalid
+    CP-->>UI: 400 validation_error
+    UI-->>Op: Show error banner
+  else valid
+    CP->>DB: insert algorithm_configs
+    alt duplicate name
+      DB-->>CP: duplicate key
+      CP-->>UI: 409 conflict
+    else ok
+      DB-->>CP: inserted doc
+      CP-->>UI: 201 AlgorithmConfig
+      UI-->>Op: Success + table refresh
+    end
+  end
+```
+
+### Create namespace bound to a config
+
+```mermaid
+sequenceDiagram
+  actor Op as Operator (UI)
+  participant UI as React Rate Limiter tab
+  participant CP as control-plane
+  participant DB as MongoDB
+
+  Op->>UI: Label, upstreamHost, configId, matchMode
+  UI->>CP: POST /api/v1/namespaces
+  CP->>DB: find algorithm_configs by configId
+  alt missing / disabled config
+    CP-->>UI: 400 validation_error
+  else ok
+    CP->>CP: validateNamespaceInput + copy algorithm from config
+    CP->>DB: insert namespaces
+    CP-->>UI: 201 Namespace
+    UI-->>Op: Select namespace for rules
+  end
+```
+
+### Attach match rules then delete config (guard)
+
+```mermaid
+sequenceDiagram
+  actor Op as Operator
+  participant UI as React UI
+  participant CP as control-plane
+  participant DB as MongoDB
+
+  Op->>UI: Add header / path / method rules
+  UI->>CP: POST /api/v1/namespaces/{id}/rules
+  CP->>CP: validateRuleMatch
+  CP->>DB: insert rules
+  CP-->>UI: 201 Rule
+
+  Op->>UI: Delete algorithm config (still referenced)
+  UI->>CP: DELETE /api/v1/configs/{id}
+  CP->>DB: count namespaces where configId
+  CP-->>UI: 409 in_use
+  UI-->>Op: Error — config referenced by namespaces
+```
+
+### Runtime read path (proxy — implemented)
+
+Full end-to-end diagrams: [`sequences.md`](sequences.md).
+
+```mermaid
+sequenceDiagram
+  participant Veg as Vegeta
+  participant LB as nginx_LB
+  participant Proxy as rate_limiter_a_or_b
+  participant Cache as PolicyCache
+  participant DB as MongoDB
+  participant Redis as Redis_Lua
+  participant Mock as mock_server
+
+  Note over Cache,DB: background poll every 2s
+  Veg->>LB: GET /1001/deviceList + US-API-Key
+  LB->>Proxy: round_robin
+  Proxy->>Cache: resolve namespace
+  Cache-->>Proxy: matched namespace + params
+  Proxy->>Redis: EVAL algorithm script
+  alt allow
+    Proxy->>Mock: reverse proxy
+    Mock-->>Veg: upstream response + X-RateLimit-*
+  else deny
+    Proxy-->>Veg: 429 + quota headers
+  end
+```
+
+---
+
 ## Related docs
 
 - [`architecture.md`](architecture.md) — planes, compose topology, implementation slices  
+- [`redis-schema.md`](redis-schema.md) — Redis keys + Lua consume/peek  
+- [`sequences.md`](sequences.md) — end-to-end client / operator sequences  
 - [`README.md`](README.md) — bootstrap / ports  
 - [`build/mongo/001_seed.js`](build/mongo/001_seed.js) — init seed script  
+

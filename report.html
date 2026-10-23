@@ -352,7 +352,7 @@
         <span class="pill cp">Control Plane</span>
         <span class="pill dp">Data Plane</span>
       </div>
-      <p class="title-meta">Canonical slides: <code>report.html</code> · Notes: <code>architecture.md</code></p>
+      <p class="title-meta">Notes: <code>architecture.md</code> · Mongo: <code>ratelimiter-schema.md</code> · Redis: <code>redis-schema.md</code> · Flows: <code>sequences.md</code></p>
     </div>
     <p class="nav-hint">Scroll ↓ · 1 / 7</p>
   </section>
@@ -379,7 +379,7 @@
             <div class="flow">
               <div class="node">Control Plane API <small>Go · admin REST</small></div>
               <div class="arrow">▼ keys · paths · upstreams · rules</div>
-              <div class="node">MySQL <small>durable registry + policies</small></div>
+              <div class="node">MongoDB <small>namespaces · rules · configs</small></div>
             </div>
           </div>
           <div class="plane data">
@@ -395,10 +395,10 @@
         </div>
         <div class="shared">
           <div class="shared-caption">Shared stores</div>
-          <div class="node">MySQL <small>CP writes · DP reads</small></div>
+          <div class="node">MongoDB <small>CP writes · DP reads (cached)</small></div>
           <div class="node">Redis + Lua <small>DP only · atomic quotas</small></div>
         </div>
-        <p class="note">Planes meet at MySQL. Deny stops at the proxy — mock is not called.</p>
+        <p class="note">Planes meet at MongoDB (policy) and Redis (quota). Deny stops at the proxy — mock is not called.</p>
       </div>
     </div>
   </section>
@@ -421,7 +421,7 @@
           <tr><td>Load generator</td><td>Go (Vegeta)</td><td>Ramp / burst / constant load against the proxy</td></tr>
           <tr><td>Mock upstream</td><td>Go</td><td>Mock APIs with random delay; no auth</td></tr>
           <tr><td>Console UI</td><td>React</td><td>One UI; Control Plane and Data Plane tabs</td></tr>
-          <tr><td>Policy store</td><td>MySQL</td><td>Durable registration and policies</td></tr>
+          <tr><td>Policy store</td><td>MongoDB</td><td>Namespaces, match rules, algorithm configs</td></tr>
           <tr><td>Shared state</td><td>Redis + Lua</td><td>Atomic counters across proxy instances</td></tr>
           <tr><td>Bootstrap</td><td>Docker Compose</td><td>Local multi-instance stack</td></tr>
         </tbody>
@@ -441,7 +441,7 @@
         <div class="panel">
           <h3>Ownership</h3>
           <ul class="compact why">
-            <li><strong>MySQL</strong> owns <em>what the limit is</em> and <em>what is registered</em> (keys, paths, upstreams). Survives restarts; config changes without redeploying the proxy.</li>
+            <li><strong>MongoDB</strong> owns <em>what the limit is</em> and <em>how traffic is matched</em> (namespaces, rules, algorithm configs). Survives restarts; proxies hot-reload via poll without restart.</li>
             <li><strong>Redis + Lua</strong> owns <em>how much has been consumed</em>. All proxy replicas share the same counters under contention.</li>
           </ul>
         </div>
@@ -472,16 +472,16 @@
         </thead>
         <tbody>
           <tr>
-            <td>React — Control Plane tab</td>
-            <td>Operator console for CRUD on keys, paths, upstreams, and rate-limit rules; view registration state</td>
+            <td>React — Rate Limiter page</td>
+            <td>CRUD namespaces, match rules, algorithm configs; control-plane self-tests</td>
           </tr>
           <tr>
             <td>Control Plane API (Go)</td>
             <td>REST admin APIs backing the UI; validates and persists config</td>
           </tr>
           <tr>
-            <td>MySQL</td>
-            <td>Source of truth for keys, path mappings, upstream targets, and policies (burst / sustained, algorithm)</td>
+            <td>MongoDB</td>
+            <td>Source of truth for namespaces, match rules, upstream targets, and algorithm configs (burst / sustained)</td>
           </tr>
         </tbody>
       </table>
@@ -516,16 +516,16 @@
             <td>Configurable <strong>ramp</strong>, <strong>burst</strong>, and <strong>constant</strong> load against the proxy</td>
           </tr>
           <tr>
-            <td>Inline reverse proxy (Go) ×2</td>
-            <td>Evaluate via Redis/Lua; allow → forward upstream; deny → reject with quota signals; shared state across replicas</td>
+            <td>Inline reverse proxy (Go) ×2 + nginx LB</td>
+            <td>Evaluate via Redis/Lua; allow → forward; deny → 429; <code>GET /api/v1/quota</code> peek; shared Redis across replicas</td>
           </tr>
           <tr>
             <td>Mock backend (Go)</td>
-            <td>Dummy APIs with random delay; proves forward-on-allow without business logic</td>
+            <td>Dummy APIs with ~500ms delay; proves forward-on-allow without business logic</td>
           </tr>
           <tr>
-            <td>Redis + Lua / MySQL / Compose</td>
-            <td>Atomic counters; policy + routing reads; local bootstrap of the stack</td>
+            <td>Redis + Lua / MongoDB / Compose</td>
+            <td>Atomic counters; policy reads (2s cache poll); local bootstrap of the stack</td>
           </tr>
         </tbody>
       </table>
@@ -558,7 +558,7 @@
           <tr>
             <td>Control Plane API</td>
             <td><span class="badge cp">Control</span></td>
-            <td>Admin REST; sole writer to MySQL config</td>
+            <td>Admin REST; sole writer to MongoDB config</td>
           </tr>
           <tr>
             <td>Vegeta load client</td>

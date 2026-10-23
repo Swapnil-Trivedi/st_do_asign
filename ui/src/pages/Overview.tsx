@@ -62,7 +62,8 @@ export function Overview() {
         </div>
         <p className="muted" style={{ marginBottom: '0.75rem' }}>
           Managed: <code>mongo</code>, <code>redis</code>, <code>mock-server</code>,{' '}
-          <code>vegeta-client</code>. Does not stop <code>console-api</code>.
+          <code>vegeta-client</code>, <code>control-plane</code>. Does not stop{' '}
+          <code>console-api</code>.
         </p>
         <div className="btn-row">
           <button
