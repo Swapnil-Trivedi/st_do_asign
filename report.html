@@ -150,109 +150,60 @@
     .pill.cp { background: var(--control-soft); color: var(--control); }
     .pill.dp { background: var(--data-soft); color: var(--data); }
 
-    /* Diagram */
+    /* Diagram — draw.io / AWS-style topology */
     .arch {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
       min-height: 0;
+      gap: 0.65rem;
     }
-    .ui-bar {
+    .arch-svg-wrap {
+      flex: 1;
+      min-height: 0;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.75rem;
-      padding: 0.65rem 1rem;
-      border: 1px dashed #b8c2ce;
-      border-radius: 6px;
-      background: var(--card);
-      font-size: 0.95rem;
-      flex-shrink: 0;
     }
-    .tabs { display: flex; gap: 0.4rem; }
-    .tab {
-      font-size: 0.72rem;
-      padding: 0.2rem 0.55rem;
-      border-radius: 4px;
-      font-weight: 700;
+    .arch-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
     }
-    .tab.cp { background: var(--control-soft); color: var(--control); }
-    .tab.dp { background: var(--data-soft); color: var(--data); }
-
-    .planes {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.85rem;
-      min-height: 0;
-    }
-    .plane {
-      border-radius: 6px;
-      padding: 0.85rem;
+    .arch-legend {
       display: flex;
-      flex-direction: column;
-      border: 1px solid transparent;
-      min-height: 0;
-    }
-    .plane.control { background: var(--control-soft); border-color: #b7d9cb; }
-    .plane.data { background: var(--data-soft); border-color: #b7c9e3; }
-    .plane-label {
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 0.55rem;
-      flex-shrink: 0;
-    }
-    .plane.control .plane-label { color: var(--control); }
-    .plane.data .plane-label { color: var(--data); }
-    .flow {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 0.3rem;
-    }
-    .node {
-      background: var(--card);
-      border: 1px solid #c5cdd8;
-      border-radius: 5px;
-      padding: 0.45rem 0.6rem;
-      font-size: 0.88rem;
-      text-align: center;
-    }
-    .node small {
-      display: block;
-      color: var(--muted);
-      font-size: 0.7rem;
-      margin-top: 0.1rem;
-    }
-    .arrow {
-      text-align: center;
-      color: var(--muted);
+      flex-wrap: wrap;
+      gap: 1rem 1.5rem;
       font-size: 0.72rem;
-    }
-    .shared {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.65rem;
+      color: var(--muted);
       flex-shrink: 0;
+      align-items: center;
     }
-    .shared .node {
-      background: var(--shared-soft);
-      border-color: #d4c9b0;
+    .arch-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
     }
-    .shared-caption {
-      grid-column: 1 / -1;
-      font-size: 0.68rem;
-      color: var(--shared);
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
+    .arch-legend i {
+      display: inline-block;
+      width: 18px;
+      height: 3px;
+      border-radius: 1px;
+    }
+    .arch-legend i.req { background: var(--data); }
+    .arch-legend i.admin { background: var(--control); }
+    .arch-legend i.infra {
+      background: transparent;
+      border-top: 2px dashed var(--shared);
+      height: 0;
+      width: 18px;
     }
     .note {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: var(--muted);
       flex-shrink: 0;
     }
@@ -324,6 +275,270 @@
     }
     .why li { margin: 0.5rem 0; }
 
+    /* Swagger-style API slide */
+    .api-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.25fr 0.85fr;
+      gap: 0.75rem;
+      min-height: 0;
+    }
+    .api-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      min-height: 0;
+      overflow: auto;
+    }
+    .api-group {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .api-group-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.4rem 0.65rem;
+      border-bottom: 1px solid var(--line);
+      background: #eef1f5;
+    }
+    .api-group-head h3 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--ink);
+      margin: 0;
+    }
+    .api-group-head .base {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+    }
+    .api-group-head.cp-head { border-left: 3px solid var(--control); }
+    .api-group-head.dp-head { border-left: 3px solid var(--data); background: var(--data-soft); }
+    .api-flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      padding: 0.45rem 0.65rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      border-bottom: 1px dashed var(--line);
+      background: #fafbfc;
+    }
+    .api-flow strong { color: var(--ink); }
+    .api-flow .step {
+      background: var(--control-soft);
+      color: var(--control);
+      font-weight: 700;
+      font-size: 0.65rem;
+      padding: 0.12rem 0.4rem;
+      border-radius: 3px;
+    }
+    .api-row {
+      display: grid;
+      grid-template-columns: 4.2rem 1fr auto;
+      gap: 0.45rem;
+      align-items: baseline;
+      padding: 0.32rem 0.65rem;
+      border-bottom: 1px solid #eef1f5;
+      font-size: 0.74rem;
+    }
+    .api-row:last-child { border-bottom: none; }
+    .api-row .path {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.7rem;
+      color: var(--ink);
+      word-break: break-all;
+    }
+    .api-row .desc {
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-align: right;
+      max-width: 11rem;
+    }
+    .m {
+      display: inline-block;
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.12rem 0.35rem;
+      border-radius: 3px;
+      text-align: center;
+      min-width: 3.4rem;
+    }
+    .m.get { background: #e7f3ff; color: #1a6bb5; }
+    .m.post { background: #e6f4ef; color: #0b6e4f; }
+    .m.put { background: #fff4e5; color: #9a5b00; }
+    .m.del { background: #fdeceb; color: #b42318; }
+    .api-note {
+      font-size: 0.7rem;
+      color: var(--muted);
+      padding: 0.35rem 0.65rem 0.5rem;
+      line-height: 1.35;
+    }
+    .api-note code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.65rem;
+      background: #eef1f5;
+      padding: 0.05rem 0.25rem;
+      border-radius: 3px;
+    }
+    .quota-card {
+      background: var(--card);
+      border: 1px solid #b7c9e3;
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+      flex: 1;
+      min-height: 0;
+    }
+    .quota-card h3 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--data);
+      margin-bottom: 0.35rem;
+    }
+    .quota-card .endpoint {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.72rem;
+      background: var(--data-soft);
+      color: var(--data);
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      margin-bottom: 0.45rem;
+    }
+    .quota-card table {
+      font-size: 0.7rem;
+      border: none;
+    }
+    .quota-card th, .quota-card td {
+      padding: 0.22rem 0.3rem;
+      border-bottom: 1px solid #eef1f5;
+    }
+    .quota-card th {
+      background: transparent;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--ink);
+      width: 28%;
+    }
+    .quota-card code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.66rem;
+      background: #eef1f5;
+      padding: 0.05rem 0.22rem;
+      border-radius: 3px;
+    }
+    .quota-card .resp {
+      margin-top: 0.4rem;
+      font-size: 0.66rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .support-box {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--control);
+      border-radius: 8px;
+      padding: 0.5rem 0.7rem;
+      flex-shrink: 0;
+    }
+    .support-box h3 {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .support-box ul {
+      margin: 0;
+      padding-left: 1rem;
+      font-size: 0.7rem;
+      color: var(--ink);
+      line-height: 1.4;
+    }
+    .support-box li { margin: 0.22rem 0; }
+    .support-box code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.65rem;
+      background: #eef1f5;
+      padding: 0.05rem 0.22rem;
+      border-radius: 3px;
+    }
+    .star-note {
+      margin-top: 0.4rem;
+      padding-top: 0.35rem;
+      border-top: 1px dashed var(--line);
+      font-size: 0.68rem;
+      color: var(--ink);
+      line-height: 1.35;
+    }
+    .star-note strong { color: var(--control); }
+    .m.any { background: #eef1f5; color: #3d4a57; }
+
+    /* Sequence diagram slide */
+    .seq-layout {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      min-height: 0;
+    }
+    .seq-svg-wrap {
+      flex: 1;
+      min-height: 0;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.35rem 0.5rem;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .seq-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+    }
+    .seq-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem 1rem;
+      font-size: 0.68rem;
+      color: var(--muted);
+      flex-shrink: 0;
+      align-items: center;
+    }
+    .seq-legend code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.65rem;
+      background: #eef1f5;
+      padding: 0.05rem 0.28rem;
+      border-radius: 3px;
+      color: var(--ink);
+    }
+    .seq-legend .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .seq-legend i {
+      width: 14px;
+      height: 2px;
+      display: inline-block;
+    }
+    .seq-legend i.allow { background: var(--control); }
+    .seq-legend i.deny { background: #b42318; }
+    .seq-legend i.peek { background: var(--data); border-top: 2px dashed var(--data); height: 0; }
+
     .nongoals {
       background: var(--card);
       border: 1px solid var(--line);
@@ -334,9 +549,241 @@
     }
     .nongoals li { margin: 0.65rem 0; }
 
-    @media (max-width: 800px) {
+    /* Stack slide — decision + schema side */
+    .stack-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 0.85rem;
+      min-height: 0;
+    }
+    .stack-main {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      min-height: 0;
+    }
+    .stack-main table {
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+    .stack-main th, .stack-main td {
+      padding: 0.32rem 0.5rem;
+    }
+    .decision-banner {
+      background: linear-gradient(135deg, #e6f4ef 0%, #e8eef7 100%);
+      border: 1px solid #b7c9e3;
+      border-left: 4px solid var(--data);
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      font-size: 0.8rem;
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    .decision-banner h3 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 0.45rem;
+    }
+    .decision-banner .distinctions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .decision-banner .dist {
+      background: rgba(255,255,255,0.72);
+      border-radius: 5px;
+      padding: 0.4rem 0.55rem;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+    .decision-banner .dist strong {
+      display: inline;
+      font-size: 0.76rem;
+      margin-right: 0.35rem;
+    }
+    .decision-banner .dist.mongo strong { color: var(--control); }
+    .decision-banner .dist.redis strong { color: var(--data); }
+    .decision-banner .dist p {
+      display: inline;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.35;
+    }
+    .decision-banner .reset-note {
+      margin-top: 0.45rem;
+      padding-top: 0.4rem;
+      border-top: 1px dashed #c5cdd8;
+      font-size: 0.72rem;
+      color: var(--ink);
+      line-height: 1.35;
+    }
+    .schema-side {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      min-height: 0;
+      overflow: auto;
+    }
+    .schema-side > h3 {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .schema-side > h3 code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.68rem;
+      text-transform: none;
+      letter-spacing: 0;
+      background: #eef1f5;
+      padding: 0.05rem 0.25rem;
+      border-radius: 3px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .coll {
+      border: 1px solid #e4e9ef;
+      border-radius: 5px;
+      padding: 0.35rem 0.45rem 0.4rem;
+      background: #fafbfc;
+      flex-shrink: 0;
+    }
+    .coll-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.4rem;
+      margin-bottom: 0.2rem;
+    }
+    .coll-head code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--control);
+      background: var(--control-soft);
+      padding: 0.05rem 0.3rem;
+      border-radius: 3px;
+    }
+    .coll-head span {
+      font-size: 0.62rem;
+      color: var(--muted);
+      text-align: right;
+    }
+    .coll-fields {
+      width: 100%;
+      border: none;
+      background: transparent;
+      font-size: 0.66rem;
+    }
+    .coll-fields th, .coll-fields td {
+      padding: 0.12rem 0.15rem;
+      border-bottom: 1px solid #eef1f5;
+      vertical-align: top;
+      line-height: 1.3;
+    }
+    .coll-fields tr:last-child th,
+    .coll-fields tr:last-child td { border-bottom: none; }
+    .coll-fields th {
+      background: transparent;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.66rem;
+      font-weight: 600;
+      color: var(--ink);
+      width: 34%;
+      white-space: nowrap;
+    }
+    .coll-fields th code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.64rem;
+      background: transparent;
+      padding: 0;
+      color: var(--ink);
+    }
+    .coll-fields td { color: var(--muted); }
+    .coll-fields .pk { color: var(--control); font-weight: 700; }
+    .coll-idx {
+      margin-top: 0.2rem;
+      font-size: 0.6rem;
+      color: var(--shared);
+      line-height: 1.3;
+    }
+    .coll-idx code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.58rem;
+      background: var(--shared-soft);
+      padding: 0.02rem 0.2rem;
+      border-radius: 2px;
+    }
+    .redis-strip {
+      border-top: 1px dashed var(--line);
+      padding-top: 0.4rem;
+      flex-shrink: 0;
+    }
+    .redis-strip h3 {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .redis-strip .keyline {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.66rem;
+      background: var(--data-soft);
+      color: var(--data);
+      padding: 0.25rem 0.4rem;
+      border-radius: 4px;
+      margin-bottom: 0.3rem;
+      word-break: break-all;
+    }
+    .redis-strip .schema-kv {
+      font-size: 0.66rem;
+      width: 100%;
+      border: none;
+      background: transparent;
+    }
+    .redis-strip .schema-kv th,
+    .redis-strip .schema-kv td {
+      padding: 0.12rem 0.15rem;
+      border-bottom: 1px solid #eef1f5;
+      vertical-align: top;
+    }
+    .redis-strip .schema-kv th {
+      background: transparent;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.66rem;
+      font-weight: 600;
+      width: 34%;
+    }
+    .redis-strip .schema-kv code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.64rem;
+      background: #eef1f5;
+      padding: 0.02rem 0.2rem;
+      border-radius: 2px;
+    }
+    .redis-strip .hint {
+      font-size: 0.6rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+
+    @media (max-width: 900px) {
       .slide { padding: 1.5rem 1.25rem 2rem; height: auto; min-height: 100vh; }
-      .planes, .shared, .split-two { grid-template-columns: 1fr; }
+      .split-two, .stack-layout, .api-layout { grid-template-columns: 1fr; }
+      .arch-svg-wrap { min-height: 28rem; }
+      .api-row { grid-template-columns: 4rem 1fr; }
+      .api-row .desc { text-align: left; max-width: none; grid-column: 2; }
     }
   </style>
 </head>
@@ -364,41 +811,127 @@
       <p class="slide-num">2 / 7</p>
     </div>
     <div class="slide-body">
-      <h2>Lean topology</h2>
+      <h2>Architecture and topology</h2>
       <div class="arch">
-        <div class="ui-bar">
-          <strong>React Console</strong>
-          <div class="tabs">
-            <span class="tab cp">Control Plane</span>
-            <span class="tab dp">Data Plane</span>
-          </div>
+        <div class="arch-svg-wrap">
+          <svg viewBox="0 0 980 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture topology: control plane, data plane, and infrastructure">
+            <defs>
+              <marker id="arr-data" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6 Z" fill="#1d4f91"/>
+              </marker>
+              <marker id="arr-ctrl" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6 Z" fill="#0b6e4f"/>
+              </marker>
+              <marker id="arr-infra" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6 Z" fill="#6b5b3a"/>
+              </marker>
+            </defs>
+
+            <!-- CONTROL PLANE band -->
+            <rect x="12" y="12" width="956" height="118" rx="6" fill="#e6f4ef" stroke="#b7d9cb" stroke-width="1.5"/>
+            <text x="28" y="36" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#0b6e4f">CONTROL PLANE</text>
+            <text x="168" y="36" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">configure · admin only · no request forwarding</text>
+
+            <!-- Admin UI -->
+            <rect x="48" y="52" width="160" height="58" rx="4" fill="#ffffff" stroke="#0b6e4f" stroke-width="1.5"/>
+            <text x="128" y="76" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">Admin UI</text>
+            <text x="128" y="94" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">React · Rate Limiter tab</text>
+
+            <!-- arrow UI → CP API -->
+            <line x1="208" y1="81" x2="268" y2="81" stroke="#0b6e4f" stroke-width="1.75" marker-end="url(#arr-ctrl)"/>
+            <text x="238" y="72" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="9" fill="#0b6e4f">CRUD</text>
+
+            <!-- Control Plane API -->
+            <rect x="272" y="52" width="180" height="58" rx="4" fill="#ffffff" stroke="#0b6e4f" stroke-width="1.5"/>
+            <text x="362" y="76" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">Control Plane API</text>
+            <text x="362" y="94" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">Go · admin REST</text>
+
+            <!-- arrow CP → Mongo (down into infra) -->
+            <path d="M362,110 L362,148 L180,148 L180,392" fill="none" stroke="#0b6e4f" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-ctrl)"/>
+            <text x="270" y="142" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="9" fill="#0b6e4f">persist policy</text>
+
+            <!-- DATA PLANE band -->
+            <rect x="12" y="148" width="956" height="200" rx="6" fill="#e8eef7" stroke="#b7c9e3" stroke-width="1.5"/>
+            <text x="28" y="172" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#1d4f91">DATA PLANE</text>
+            <text x="138" y="172" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">enforce inline · Client → LB → Rate Limiter → Upstream</text>
+
+            <!-- Client -->
+            <rect x="36" y="208" width="130" height="72" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.5"/>
+            <text x="101" y="236" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">Client</text>
+            <text x="101" y="254" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">Vegeta · ramp / burst</text>
+            <text x="101" y="268" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">/ constant load</text>
+
+            <line x1="166" y1="244" x2="218" y2="244" stroke="#1d4f91" stroke-width="1.75" marker-end="url(#arr-data)"/>
+            <text x="192" y="234" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="9" fill="#1d4f91">HTTP</text>
+
+            <!-- LB -->
+            <rect x="222" y="208" width="120" height="72" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.5"/>
+            <text x="282" y="240" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">Load Balancer</text>
+            <text x="282" y="258" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">nginx · :8080</text>
+
+            <line x1="342" y1="244" x2="394" y2="244" stroke="#1d4f91" stroke-width="1.75" marker-end="url(#arr-data)"/>
+
+            <!-- Rate Limiting group (two replicas) -->
+            <rect x="398" y="188" width="280" height="112" rx="5" fill="#dce6f4" stroke="#1d4f91" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="538" y="208" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" font-weight="700" letter-spacing="0.8" fill="#1d4f91">RATE LIMITING SERVICE</text>
+
+            <rect x="416" y="220" width="112" height="60" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.25"/>
+            <text x="472" y="246" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="12" font-weight="600" fill="#1a1f24">Proxy A</text>
+            <text x="472" y="262" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">inline · Go</text>
+
+            <rect x="548" y="220" width="112" height="60" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.25"/>
+            <text x="604" y="246" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="12" font-weight="600" fill="#1a1f24">Proxy B</text>
+            <text x="604" y="262" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">inline · Go</text>
+
+            <line x1="678" y1="244" x2="730" y2="244" stroke="#1d4f91" stroke-width="1.75" marker-end="url(#arr-data)"/>
+            <text x="704" y="234" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="9" fill="#1d4f91">allow</text>
+
+            <!-- Upstream / servers -->
+            <rect x="734" y="208" width="210" height="72" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.5"/>
+            <text x="839" y="236" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">Upstream Servers</text>
+            <text x="839" y="254" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">Mock backend · random delay</text>
+            <text x="839" y="268" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">deny → 429 (no forward)</text>
+
+            <!-- Infra connectors from rate limiter -->
+            <line x1="472" y1="300" x2="472" y2="340" stroke="#6b5b3a" stroke-width="1.5" stroke-dasharray="5 3"/>
+            <line x1="472" y1="340" x2="180" y2="340" stroke="#6b5b3a" stroke-width="1.5" stroke-dasharray="5 3"/>
+            <line x1="180" y1="340" x2="180" y2="392" stroke="#6b5b3a" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-infra)"/>
+            <text x="300" y="332" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="9" fill="#6b5b3a">policy bootstrap (poll)</text>
+
+            <line x1="604" y1="300" x2="604" y2="340" stroke="#6b5b3a" stroke-width="1.5" stroke-dasharray="5 3"/>
+            <line x1="604" y1="340" x2="500" y2="340" stroke="#6b5b3a" stroke-width="1.5" stroke-dasharray="5 3"/>
+            <line x1="500" y1="340" x2="500" y2="392" stroke="#6b5b3a" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-infra)"/>
+            <text x="560" y="332" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="9" fill="#6b5b3a">atomic counters</text>
+
+            <!-- INFRA LAYER -->
+            <rect x="12" y="366" width="956" height="140" rx="6" fill="#f3efe6" stroke="#d4c9b0" stroke-width="1.5"/>
+            <text x="28" y="390" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#6b5b3a">INFRASTRUCTURE</text>
+            <text x="168" y="390" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">shared stores · individual nodes</text>
+
+            <!-- Mongo -->
+            <rect x="80" y="408" width="200" height="72" rx="4" fill="#ffffff" stroke="#6b5b3a" stroke-width="1.5"/>
+            <ellipse cx="180" cy="424" rx="28" ry="8" fill="none" stroke="#6b5b3a" stroke-width="1"/>
+            <text x="180" y="448" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">MongoDB</text>
+            <text x="180" y="466" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">namespaces · rules · configs</text>
+
+            <!-- Redis -->
+            <rect x="400" y="408" width="200" height="72" rx="4" fill="#ffffff" stroke="#6b5b3a" stroke-width="1.5"/>
+            <rect x="478" y="416" width="44" height="10" rx="2" fill="none" stroke="#6b5b3a" stroke-width="1"/>
+            <text x="500" y="448" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">Redis + Lua</text>
+            <text x="500" y="466" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">shared quotas · atomic EVAL</text>
+
+            <!-- Docker note -->
+            <rect x="700" y="408" width="220" height="72" rx="4" fill="#ffffff" stroke="#c5cdd8" stroke-width="1.25"/>
+            <text x="810" y="440" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#1a1f24">Docker Compose</text>
+            <text x="810" y="458" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" fill="#5a6570">st_net · local bootstrap</text>
+          </svg>
         </div>
-        <div class="planes">
-          <div class="plane control">
-            <div class="plane-label">Control — configure</div>
-            <div class="flow">
-              <div class="node">Control Plane API <small>Go · admin REST</small></div>
-              <div class="arrow">▼ keys · paths · upstreams · rules</div>
-              <div class="node">MongoDB <small>namespaces · rules · configs</small></div>
-            </div>
-          </div>
-          <div class="plane data">
-            <div class="plane-label">Data — enforce + validate</div>
-            <div class="flow">
-              <div class="node">Vegeta Client <small>ramp / burst / constant</small></div>
-              <div class="arrow">▼ HTTP load</div>
-              <div class="node">Inline Proxy ×2 <small>limit then forward</small></div>
-              <div class="arrow">▼ allow only</div>
-              <div class="node">Mock Backend <small>random delay · no auth</small></div>
-            </div>
-          </div>
+        <div class="arch-legend">
+          <span><i class="admin"></i> Control / admin</span>
+          <span><i class="req"></i> Request path</span>
+          <span><i class="infra"></i> Infra / policy &amp; quota</span>
         </div>
-        <div class="shared">
-          <div class="shared-caption">Shared stores</div>
-          <div class="node">MongoDB <small>CP writes · DP reads (cached)</small></div>
-          <div class="node">Redis + Lua <small>DP only · atomic quotas</small></div>
-        </div>
-        <p class="note">Planes meet at MongoDB (policy) and Redis (quota). Deny stops at the proxy — mock is not called.</p>
+        <p class="note">Planes meet at MongoDB (policy) and Redis (quota). Deny stops at the proxy — upstream is not called.</p>
       </div>
     </div>
   </section>
@@ -411,47 +944,304 @@
     </div>
     <div class="slide-body">
       <h2>Stack</h2>
-      <table>
-        <thead>
-          <tr><th>Layer</th><th>Choice</th><th>Role</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Control plane API</td><td>Go</td><td>Admin APIs: namespaces, rules, algorithm configs</td></tr>
-          <tr><td>Data plane proxy</td><td>Go</td><td>Inline reverse proxy; server-side limit before forward</td></tr>
-          <tr><td>Load generator</td><td>Go (Vegeta)</td><td>Ramp / burst / constant load against the proxy</td></tr>
-          <tr><td>Mock upstream</td><td>Go</td><td>Mock APIs with random delay; no auth</td></tr>
-          <tr><td>Console UI</td><td>React</td><td>One UI; Control Plane and Data Plane tabs</td></tr>
-          <tr><td>Policy store</td><td>MongoDB</td><td>Namespaces, match rules, algorithm configs</td></tr>
-          <tr><td>Shared state</td><td>Redis + Lua</td><td>Atomic counters across proxy instances</td></tr>
-          <tr><td>Bootstrap</td><td>Docker Compose</td><td>Local multi-instance stack</td></tr>
-        </tbody>
-      </table>
+      <div class="stack-layout">
+        <div class="stack-main">
+          <table>
+            <thead>
+              <tr><th>Layer</th><th>Choice</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Control plane API</td><td>Go</td><td>Admin APIs: namespaces, rules, algorithm configs</td></tr>
+              <tr><td>Data plane proxy</td><td>Go</td><td>Inline reverse proxy; limit before forward</td></tr>
+              <tr><td>Load generator</td><td>Go (Vegeta)</td><td>Ramp / burst / constant against the proxy</td></tr>
+              <tr><td>Mock upstream</td><td>Go</td><td>Mock APIs with random delay; no auth</td></tr>
+              <tr><td>Console UI</td><td>React</td><td>One UI; Control Plane and Data Plane tabs</td></tr>
+              <tr><td>Policy store</td><td>MongoDB</td><td>Durable namespace policy + match rules</td></tr>
+              <tr><td>Shared state</td><td>Redis + Lua</td><td>Fast atomic counters across replicas</td></tr>
+              <tr><td>Bootstrap</td><td>Docker Compose</td><td>Local multi-instance stack</td></tr>
+            </tbody>
+          </table>
+
+          <aside class="decision-banner">
+            <h3>Store choice — why Mongo vs Redis</h3>
+            <div class="distinctions">
+              <div class="dist mongo">
+                <strong>MongoDB — policy of record</strong>
+                <p>Holds <em>what</em> to limit: namespaces, match rules, and algorithm configs. Control plane is the sole writer; data plane polls (~2s) and caches for hot-reload without restart.</p>
+              </div>
+              <div class="dist redis">
+                <strong>Redis + Lua — hot path counts</strong>
+                <p>Chosen for quick, in-memory, atomic check-and-consume under contention. One <code>EVAL</code> per request keeps multi-proxy quotas correct — no double-count across replicas.</p>
+              </div>
+            </div>
+            <p class="reset-note">
+              <strong>Backfill &amp; reset:</strong>
+              <code>fixed_token</code> refills on each Lua call (<code>elapsed × sustainedRps</code>, capped at <code>burst</code>) — idle keys start full.
+              <code>fixed_window</code> resets when <code>windowId</code> rolls (new key + <code>PEXPIRE</code>).
+              <code>sliding_window</code> trims expired ZSET members each consume; <code>reset_ms</code> is when the oldest request leaves the window.
+              Keys self-expire via TTL — no manual backfill job.
+            </p>
+          </aside>
+        </div>
+
+        <aside class="schema-side">
+          <h3>Mongo fields · db <code>rate_limiter</code></h3>
+
+          <div class="coll">
+            <div class="coll-head">
+              <code>algorithms</code>
+              <span>catalog · seeded</span>
+            </div>
+            <table class="coll-fields">
+              <tr><th><code>_id</code> <span class="pk">PK</span></th><td>Algorithm key: fixed_token · fixed_window · sliding_window</td></tr>
+              <tr><th><code>label</code></th><td>UI display name</td></tr>
+              <tr><th><code>paramsSchema</code></th><td>Allowed keys/types under algorithm_configs.params</td></tr>
+              <tr><th><code>enabled</code></th><td>If false, block new configs with this algorithm</td></tr>
+            </table>
+            <p class="coll-idx">idx: <code>enabled</code></p>
+          </div>
+
+          <div class="coll">
+            <div class="coll-head">
+              <code>algorithm_configs</code>
+              <span>limit knobs</span>
+            </div>
+            <table class="coll-fields">
+              <tr><th><code>_id</code> <span class="pk">PK</span></th><td>ObjectId</td></tr>
+              <tr><th><code>name</code></th><td>Unique display / lookup name</td></tr>
+              <tr><th><code>algorithm</code></th><td>→ algorithms._id</td></tr>
+              <tr><th><code>params</code></th><td>fixed_token: sustainedRps + burst · windows: limit + windowSeconds</td></tr>
+              <tr><th><code>enabled</code></th><td>Disabled configs ignored by proxy</td></tr>
+            </table>
+            <p class="coll-idx">idx: <code>name</code> unique · <code>algorithm+enabled</code></p>
+          </div>
+
+          <div class="coll">
+            <div class="coll-head">
+              <code>namespaces</code>
+              <span>policy + route</span>
+            </div>
+            <table class="coll-fields">
+              <tr><th><code>_id</code> <span class="pk">PK</span></th><td>Namespace id (also Redis key segment)</td></tr>
+              <tr><th><code>label</code></th><td>Unique human name</td></tr>
+              <tr><th><code>upstreamHost</code></th><td>Forward base URL (e.g. http://mock-server:8081)</td></tr>
+              <tr><th><code>path</code></th><td>Optional forward path; null → use request path</td></tr>
+              <tr><th><code>algorithm</code></th><td>Denormalized copy of linked config algorithm</td></tr>
+              <tr><th><code>configId</code></th><td>→ algorithm_configs._id</td></tr>
+              <tr><th><code>matchMode</code></th><td>all (AND) · any (OR) over rules</td></tr>
+              <tr><th><code>priority</code></th><td>Lower wins when multiple namespaces match</td></tr>
+              <tr><th><code>enabled</code></th><td>Active for matching / enforcement</td></tr>
+            </table>
+            <p class="coll-idx">idx: <code>label</code> unique · <code>enabled+priority</code> · <code>configId</code></p>
+          </div>
+
+          <div class="coll">
+            <div class="coll-head">
+              <code>rules</code>
+              <span>request matchers</span>
+            </div>
+            <table class="coll-fields">
+              <tr><th><code>_id</code> <span class="pk">PK</span></th><td>ObjectId</td></tr>
+              <tr><th><code>namespaceId</code></th><td>→ namespaces._id</td></tr>
+              <tr><th><code>label</code></th><td>Optional UI / debug label</td></tr>
+              <tr><th><code>enabled</code></th><td>Inactive rules skipped</td></tr>
+              <tr><th><code>match</code></th><td>Discriminated by kind: header · path · path_attr · method · regex</td></tr>
+              <tr><th><code>match.name</code></th><td>Header name (header kind)</td></tr>
+              <tr><th><code>match.op</code></th><td>eq · in · prefix (per kind)</td></tr>
+              <tr><th><code>match.value</code></th><td>Expected value / path / method</td></tr>
+            </table>
+            <p class="coll-idx">idx: <code>namespaceId+enabled</code> · <code>match.kind+match.name</code></p>
+          </div>
+
+          <div class="redis-strip">
+            <h3>Redis keys (hot path)</h3>
+            <div class="keyline">rl:{algorithm}:{namespaceId}:{subject}</div>
+            <table class="schema-kv">
+              <tr><th><code>fixed_token</code></th><td>Hash fields <code>tokens</code>, <code>ts</code></td></tr>
+              <tr><th><code>fixed_window</code></th><td>String counter · key + <code>:{windowId}</code></td></tr>
+              <tr><th><code>sliding_window</code></th><td>ZSET · score = ms, member = UUID</td></tr>
+            </table>
+            <p class="hint">subject: <code>hdr:Name:val</code> · <code>tenant:{attr}</code> · <code>path:{url}</code></p>
+          </div>
+        </aside>
+      </div>
     </div>
   </section>
 
   <!-- SLIDE 4 -->
   <section class="slide" id="s4">
     <div class="slide-top">
-      <p class="slide-kicker">Design rationale</p>
+      <p class="slide-kicker">API surface</p>
       <p class="slide-num">4 / 7</p>
     </div>
     <div class="slide-body">
-      <h2>Why this split</h2>
-      <div class="split-two">
-        <div class="panel">
-          <h3>Ownership</h3>
-          <ul class="compact why">
-            <li><strong>MongoDB</strong> owns <em>what the limit is</em> and <em>how traffic is matched</em> (namespaces, rules, algorithm configs). Survives restarts; proxies hot-reload via poll without restart.</li>
-            <li><strong>Redis + Lua</strong> owns <em>how much has been consumed</em>. All proxy replicas share the same counters under contention.</li>
-          </ul>
+      <h2>Control &amp; data-plane APIs</h2>
+      <div class="api-layout">
+        <div class="api-col">
+          <div class="api-group">
+            <div class="api-group-head cp-head">
+              <h3>Control Plane — CRUD</h3>
+              <span class="base">:8091</span>
+            </div>
+            <div class="api-flow">
+              <span class="step">1 Algo catalog</span>
+              <span class="step">2 Config knobs</span>
+              <span class="step">3 Namespace</span>
+              <span class="step">4 Rules</span>
+              <span>→ policy the rate-limiter enforces</span>
+            </div>
+
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/algorithms</span>
+              <span class="desc">Catalog · select algorithm</span>
+            </div>
+
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/configs</span>
+              <span class="desc">List algorithm configs</span>
+            </div>
+            <div class="api-row">
+              <span class="m post">POST</span>
+              <span class="path">/api/v1/configs</span>
+              <span class="desc">Create params (RPS / burst / window)</span>
+            </div>
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/configs/{id}</span>
+              <span class="desc">Get config</span>
+            </div>
+            <div class="api-row">
+              <span class="m put">PUT</span>
+              <span class="path">/api/v1/configs/{id}</span>
+              <span class="desc">Update knobs</span>
+            </div>
+            <div class="api-row">
+              <span class="m del">DEL</span>
+              <span class="path">/api/v1/configs/{id}</span>
+              <span class="desc">Delete if unused</span>
+            </div>
+
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/namespaces</span>
+              <span class="desc">List namespaces</span>
+            </div>
+            <div class="api-row">
+              <span class="m post">POST</span>
+              <span class="path">/api/v1/namespaces</span>
+              <span class="desc">Bind upstream + configId</span>
+            </div>
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/namespaces/{id}</span>
+              <span class="desc">Get namespace</span>
+            </div>
+            <div class="api-row">
+              <span class="m put">PUT</span>
+              <span class="path">/api/v1/namespaces/{id}</span>
+              <span class="desc">Swap algo / priority / enabled</span>
+            </div>
+            <div class="api-row">
+              <span class="m del">DEL</span>
+              <span class="path">/api/v1/namespaces/{id}</span>
+              <span class="desc">Cascade delete rules</span>
+            </div>
+
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/namespaces/{id}/rules</span>
+              <span class="desc">List matchers</span>
+            </div>
+            <div class="api-row">
+              <span class="m post">POST</span>
+              <span class="path">/api/v1/namespaces/{id}/rules</span>
+              <span class="desc">Add header / path / … rule</span>
+            </div>
+            <div class="api-row">
+              <span class="m put">PUT</span>
+              <span class="path">/api/v1/rules/{id}</span>
+              <span class="desc">Update matcher</span>
+            </div>
+            <div class="api-row">
+              <span class="m del">DEL</span>
+              <span class="path">/api/v1/rules/{id}</span>
+              <span class="desc">Remove rule</span>
+            </div>
+          </div>
+
+          <div class="support-box">
+            <h3>Functional supportability</h3>
+            <ul>
+              <li><strong>Namespace create</strong> — requires valid <code>configId</code>, <code>upstreamHost</code>, <code>algorithm</code>, <code>matchMode</code>; <code>enabled</code> + <code>priority</code> control pickup.</li>
+              <li><strong>Rule create</strong> — attach matchers (<code>header</code> / <code>path</code> / <code>path_attr</code> / <code>method</code> / <code>regex</code>); namespace <code>matchMode</code> AND/OR combines them.</li>
+              <li><strong>Config swap</strong> — <code>PUT</code> namespace <code>configId</code> to change limits without rewriting rules.</li>
+              <li><strong>Safe delete</strong> — config delete blocked if namespaces reference it; namespace delete cascades its rules.</li>
+              <li><strong>Disable without delete</strong> — set <code>enabled: false</code> on namespace / rule / config to pause enforcement.</li>
+            </ul>
+            <p class="star-note"><strong>*</strong> Rate-limiter service needs <strong>no reload / restart</strong> when policy is added or changed — proxies poll Mongo (~2s), refresh the in-memory cache, and enforce the new namespaces / rules / configs on the next request.</p>
+          </div>
         </div>
-        <div class="panel">
-          <h3>Plane separation</h3>
-          <ul class="compact why">
-            <li><strong>Control plane</strong> mutates config only — no forwarding, no load generation.</li>
-            <li><strong>Data plane</strong> enforces on the request path — evaluate, then forward or deny.</li>
-            <li><strong>Auth</strong> is explicitly out of scope on both planes.</li>
-          </ul>
+
+        <div class="api-col">
+          <div class="api-group">
+            <div class="api-group-head dp-head">
+              <h3>Rate Limiter — data plane</h3>
+              <span class="base">LB :8080</span>
+            </div>
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/healthz</span>
+              <span class="desc">Liveness · instance a|b</span>
+            </div>
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/quota</span>
+              <span class="desc">Peek remaining / consumed</span>
+            </div>
+            <div class="api-row">
+              <span class="m del">DEL</span>
+              <span class="path">/api/v1/quota</span>
+              <span class="desc">Clear one namespace + subject</span>
+            </div>
+            <div class="api-row">
+              <span class="m post">POST</span>
+              <span class="path">/api/v1/quota/reset</span>
+              <span class="desc">Clear subject across namespaces</span>
+            </div>
+            <div class="api-row">
+              <span class="m get">GET</span>
+              <span class="path">/api/v1/traffic</span>
+              <span class="desc">Recent allow/deny decisions</span>
+            </div>
+            <div class="api-row">
+              <span class="m post">POST</span>
+              <span class="path">/api/v1/traffic/reset</span>
+              <span class="desc">Clear traffic ring buffer</span>
+            </div>
+            <div class="api-row">
+              <span class="m any">*</span>
+              <span class="path">/*</span>
+              <span class="desc">Inline proxy · match → Lua → forward / 429</span>
+            </div>
+            <p class="api-note">Service APIs only — self-test / Vegeta / mock sandbox endpoints omitted.</p>
+          </div>
+
+          <div class="quota-card">
+            <h3>Quota &amp; traffic observe</h3>
+            <div class="endpoint">GET /api/v1/quota?namespace=…&amp;apiKey=…</div>
+            <table>
+              <tr><th><code>namespace</code></th><td>Required — id (hex) or label</td></tr>
+              <tr><th><code>apiKey</code></th><td>→ subject <code>hdr:US-API-Key:…</code></td></tr>
+              <tr><th><code>subject</code></th><td>Full Redis subject (alt)</td></tr>
+              <tr><th><code>tenant</code> / <code>path</code></th><td>Shorthand identity forms</td></tr>
+            </table>
+            <p class="resp">
+              Quota peek returns <code>remaining</code>, <code>consumed</code>, <code>limit</code>, <code>resetMs</code>, <code>redisKey</code> — <strong>no consume</strong>.
+              <code>GET /api/v1/traffic</code> streams recent decisions (<code>allow</code> / <code>deny</code> / <code>no_match</code>) per instance for live supportability.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -460,36 +1250,155 @@
   <!-- SLIDE 5 -->
   <section class="slide" id="s5">
     <div class="slide-top">
-      <p class="slide-kicker">Control plane</p>
+      <p class="slide-kicker">Runtime flow</p>
       <p class="slide-num">5 / 7</p>
     </div>
     <div class="slide-body">
-      <h2>Configure</h2>
-      <p class="sub" style="margin-bottom: 0.85rem;">Admin surface for rate-limiter configuration. Durable config is written here and read by the data plane at evaluation time.</p>
-      <table>
-        <thead>
-          <tr><th>Component</th><th>Responsibility</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>React — Rate Limiter page</td>
-            <td>CRUD namespaces, match rules, algorithm configs; control-plane self-tests</td>
-          </tr>
-          <tr>
-            <td>Control Plane API (Go)</td>
-            <td>REST admin APIs backing the UI; validates and persists config</td>
-          </tr>
-          <tr>
-            <td>MongoDB</td>
-            <td>Source of truth for namespaces, match rules, upstream targets, and algorithm configs (burst / sustained)</td>
-          </tr>
-        </tbody>
-      </table>
-      <ul class="compact">
-        <li><strong>Namespace</strong> — upstream + algorithm config + match mode / priority</li>
-        <li><strong>Rules</strong> — header / path / path_attr / method / regex matchers</li>
-        <li><strong>Config</strong> — algorithm params (e.g. <code>sustainedRps</code> + <code>burst</code>)</li>
-      </ul>
+      <h2>End-to-end rate limit sequence</h2>
+      <div class="seq-layout">
+        <div class="seq-svg-wrap">
+          <svg viewBox="0 0 1080 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence diagram: client request through LB, rate limiter, Redis, and upstream">
+            <defs>
+              <marker id="seq-arr" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#1a1f24"/>
+              </marker>
+              <marker id="seq-arr-g" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#0b6e4f"/>
+              </marker>
+              <marker id="seq-arr-r" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#b42318"/>
+              </marker>
+              <marker id="seq-arr-b" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#1d4f91"/>
+              </marker>
+              <marker id="seq-arr-s" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+                <path d="M0,0 L7,2.5 L0,5 Z" fill="#6b5b3a"/>
+              </marker>
+            </defs>
+
+            <!-- Title strip -->
+            <text x="12" y="18" font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="10" font-weight="700" letter-spacing="0.8" fill="#5a6570">DEMO · GET /1001/deviceList  +  US-API-Key: ak_demo_1001_alpha</text>
+
+            <!-- Participant headers -->
+            <!-- x centers: Client 70, LB 250, Proxy 430, Cache 610, Redis 790, Upstream 970 -->
+            <g font-family="IBM Plex Sans, Segoe UI, sans-serif">
+              <rect x="20" y="28" width="100" height="36" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.25"/>
+              <text x="70" y="50" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1f24">Client</text>
+
+              <rect x="200" y="28" width="100" height="36" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.25"/>
+              <text x="250" y="45" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1f24">nginx LB</text>
+              <text x="250" y="57" text-anchor="middle" font-size="8" fill="#5a6570">:8080</text>
+
+              <rect x="370" y="28" width="120" height="36" rx="4" fill="#e8eef7" stroke="#1d4f91" stroke-width="1.25"/>
+              <text x="430" y="45" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1f24">Rate Limiter</text>
+              <text x="430" y="57" text-anchor="middle" font-size="8" fill="#5a6570">proxy a | b</text>
+
+              <rect x="555" y="28" width="110" height="36" rx="4" fill="#e6f4ef" stroke="#0b6e4f" stroke-width="1.25"/>
+              <text x="610" y="45" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1f24">Policy Cache</text>
+              <text x="610" y="57" text-anchor="middle" font-size="8" fill="#5a6570">Mongo poll 2s</text>
+
+              <rect x="735" y="28" width="110" height="36" rx="4" fill="#f3efe6" stroke="#6b5b3a" stroke-width="1.25"/>
+              <text x="790" y="45" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1f24">Redis + Lua</text>
+              <text x="790" y="57" text-anchor="middle" font-size="8" fill="#5a6570">atomic EVAL</text>
+
+              <rect x="915" y="28" width="110" height="36" rx="4" fill="#ffffff" stroke="#1d4f91" stroke-width="1.25"/>
+              <text x="970" y="45" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1f24">Upstream</text>
+              <text x="970" y="57" text-anchor="middle" font-size="8" fill="#5a6570">mock-server</text>
+            </g>
+
+            <!-- Lifelines -->
+            <g stroke="#c5cdd8" stroke-width="1" stroke-dasharray="3 4">
+              <line x1="70" y1="64" x2="70" y2="540"/>
+              <line x1="250" y1="64" x2="250" y2="540"/>
+              <line x1="430" y1="64" x2="430" y2="540"/>
+              <line x1="610" y1="64" x2="610" y2="540"/>
+              <line x1="790" y1="64" x2="790" y2="540"/>
+              <line x1="970" y1="64" x2="970" y2="540"/>
+            </g>
+
+            <g font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="9">
+              <!-- === ALLOW PATH === -->
+              <rect x="12" y="72" width="56" height="16" rx="3" fill="#e6f4ef"/>
+              <text x="40" y="83" text-anchor="middle" font-size="8" font-weight="700" fill="#0b6e4f">ALLOW</text>
+
+              <!-- 1 Client → LB -->
+              <line x1="70" y1="100" x2="242" y2="100" stroke="#1a1f24" stroke-width="1.4" marker-end="url(#seq-arr)"/>
+              <text x="156" y="94" text-anchor="middle" fill="#1a1f24">① GET /1001/deviceList</text>
+              <text x="156" y="112" text-anchor="middle" fill="#5a6570" font-size="8">Hdr: US-API-Key: ak_demo_…</text>
+
+              <!-- 2 LB → Proxy -->
+              <line x1="250" y1="128" x2="422" y2="128" stroke="#1a1f24" stroke-width="1.4" marker-end="url(#seq-arr)"/>
+              <text x="336" y="122" text-anchor="middle" fill="#1a1f24">② round-robin forward</text>
+
+              <!-- 3 Proxy → Cache -->
+              <line x1="430" y1="152" x2="602" y2="152" stroke="#0b6e4f" stroke-width="1.4" marker-end="url(#seq-arr-g)"/>
+              <text x="516" y="146" text-anchor="middle" fill="#0b6e4f">③ match namespaces + rules</text>
+
+              <!-- 4 Cache → Proxy -->
+              <line x1="610" y1="172" x2="438" y2="172" stroke="#0b6e4f" stroke-width="1.2" stroke-dasharray="4 2" marker-end="url(#seq-arr-g)"/>
+              <text x="524" y="166" text-anchor="middle" fill="#0b6e4f">④ hit · demo-deviceList · fixed_token</text>
+
+              <!-- note subject -->
+              <rect x="360" y="180" width="200" height="22" rx="3" fill="#f4f6f8" stroke="#d5dce6"/>
+              <text x="460" y="194" text-anchor="middle" font-size="8" fill="#5a6570">subject = hdr:US-API-Key:ak_demo_…</text>
+
+              <!-- 5 Proxy → Redis -->
+              <line x1="430" y1="218" x2="782" y2="218" stroke="#6b5b3a" stroke-width="1.4" marker-end="url(#seq-arr-s)"/>
+              <text x="606" y="212" text-anchor="middle" fill="#6b5b3a">⑤ EVAL fixed_token.lua  (consume)</text>
+
+              <!-- 6 Redis → Proxy -->
+              <line x1="790" y1="240" x2="438" y2="240" stroke="#6b5b3a" stroke-width="1.2" stroke-dasharray="4 2" marker-end="url(#seq-arr-s)"/>
+              <text x="614" y="234" text-anchor="middle" fill="#6b5b3a">⑥ { allowed:1, remaining, limit, resetMs }</text>
+
+              <!-- 7 Proxy → Upstream -->
+              <line x1="430" y1="268" x2="962" y2="268" stroke="#0b6e4f" stroke-width="1.4" marker-end="url(#seq-arr-g)"/>
+              <text x="696" y="262" text-anchor="middle" fill="#0b6e4f">⑦ reverse-proxy same method / path / headers</text>
+
+              <!-- 8 Upstream → Proxy -->
+              <line x1="970" y1="290" x2="438" y2="290" stroke="#0b6e4f" stroke-width="1.2" stroke-dasharray="4 2" marker-end="url(#seq-arr-g)"/>
+              <text x="704" y="284" text-anchor="middle" fill="#0b6e4f">⑧ 200 OK · upstream body</text>
+
+              <!-- 9 Proxy → LB → Client -->
+              <line x1="430" y1="316" x2="258" y2="316" stroke="#0b6e4f" stroke-width="1.4" marker-end="url(#seq-arr-g)"/>
+              <line x1="250" y1="336" x2="78" y2="336" stroke="#0b6e4f" stroke-width="1.4" marker-end="url(#seq-arr-g)"/>
+              <text x="340" y="310" text-anchor="middle" fill="#0b6e4f">⑨ 200 + quota headers</text>
+              <text x="164" y="330" text-anchor="middle" fill="#0b6e4f" font-size="8">X-RateLimit-* · X-Proxy-Instance</text>
+
+              <!-- === DENY ALT === -->
+              <rect x="12" y="352" width="980" height="100" rx="5" fill="#fdf2f1" stroke="#f0c4c0" stroke-width="1" stroke-dasharray="5 3"/>
+              <rect x="20" y="360" width="52" height="16" rx="3" fill="#fdeceb"/>
+              <text x="46" y="371" text-anchor="middle" font-size="8" font-weight="700" fill="#b42318">alt DENY</text>
+              <text x="120" y="371" font-size="8" fill="#b42318">bucket / window exhausted  ·  Redis error → fail-closed</text>
+
+              <line x1="430" y1="392" x2="782" y2="392" stroke="#b42318" stroke-width="1.4" marker-end="url(#seq-arr-r)"/>
+              <text x="606" y="386" text-anchor="middle" fill="#b42318">EVAL consume → { allowed:0, remaining:0, resetMs }</text>
+
+              <line x1="430" y1="420" x2="258" y2="420" stroke="#b42318" stroke-width="1.4" marker-end="url(#seq-arr-r)"/>
+              <line x1="250" y1="438" x2="78" y2="438" stroke="#b42318" stroke-width="1.4" marker-end="url(#seq-arr-r)"/>
+              <text x="340" y="414" text-anchor="middle" fill="#b42318">429 JSON · no upstream call</text>
+              <text x="164" y="432" text-anchor="middle" fill="#b42318" font-size="8">Retry-After · X-RateLimit-* </text>
+
+              <!-- === PEEK OPT === -->
+              <rect x="12" y="462" width="980" height="72" rx="5" fill="#e8eef7" stroke="#b7c9e3" stroke-width="1" stroke-dasharray="5 3"/>
+              <rect x="20" y="470" width="52" height="16" rx="3" fill="#dce6f4"/>
+              <text x="46" y="481" text-anchor="middle" font-size="8" font-weight="700" fill="#1d4f91">opt PEEK</text>
+              <text x="130" y="481" font-size="8" fill="#1d4f91">GET /api/v1/quota?namespace=…&amp;apiKey=…  ·  does not consume</text>
+
+              <line x1="70" y1="502" x2="422" y2="502" stroke="#1d4f91" stroke-width="1.3" stroke-dasharray="4 2" marker-end="url(#seq-arr-b)"/>
+              <line x1="430" y1="502" x2="782" y2="502" stroke="#1d4f91" stroke-width="1.3" stroke-dasharray="4 2" marker-end="url(#seq-arr-b)"/>
+              <text x="430" y="496" text-anchor="middle" fill="#1d4f91">resolve ns → EVAL peek.lua → { remaining, consumed, limit, resetMs }</text>
+              <line x1="790" y1="522" x2="78" y2="522" stroke="#1d4f91" stroke-width="1.2" stroke-dasharray="4 2" marker-end="url(#seq-arr-b)"/>
+              <text x="430" y="536" text-anchor="middle" fill="#1d4f91" font-size="8">200 QuotaState JSON · redisKey included</text>
+            </g>
+          </svg>
+        </div>
+        <div class="seq-legend">
+          <span class="tag"><i class="allow"></i> Allow → upstream</span>
+          <span class="tag"><i class="deny"></i> Deny → 429 (no forward)</span>
+          <span class="tag"><i class="peek"></i> Quota peek</span>
+          <span>Headers: <code>X-RateLimit-Limit</code> <code>X-RateLimit-Remaining</code> <code>X-RateLimit-Reset</code> <code>X-Proxy-Instance</code> <code>Retry-After</code></span>
+        </div>
+      </div>
     </div>
   </section>
 
