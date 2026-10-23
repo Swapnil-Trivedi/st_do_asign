@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+# Minimal static binary image (scratch).
+
+FROM golang:1.27-alpine AS build
+WORKDIR /src
+
+RUN apk add --no-cache git ca-certificates \
+  && update-ca-certificates
+
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ ./
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+  go build -trimpath -ldflags="-s -w" -o /out/vegeta-client ./vegeta-client
+
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /out/vegeta-client /vegeta-client
+ENV VEGETA_CLIENT_ADDR=0.0.0.0:8090
+ENV RATE_LIMITER_URL=http://rate-limiter:8080
+USER 65532:65532
+EXPOSE 8090
+ENTRYPOINT ["/vegeta-client"]

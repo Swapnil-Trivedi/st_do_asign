@@ -20,141 +20,217 @@ Production-style rate limiting stack: **control plane** (config) + **data plane*
 st_do_asign/
 ├── architecture.md
 ├── report.html
-├── build/                    # shared build + compose (local & CI)
+├── build/
 │   ├── build.sh
-│   ├── docker-compose.yml
-│   ├── Dockerfile.mock-server   # scratch-based image
+│   ├── docker-compose.yml       # network: st_net
+│   ├── Dockerfile.mock-server   # scratch
+│   ├── Dockerfile.vegeta-client # scratch
+│   ├── Dockerfile.console-api   # scratch (+ docker.sock at runtime)
 │   └── out/                     # local binaries (gitignored)
 ├── backend/
-│   ├── go.mod
-│   └── mock-server/          # Chi mock upstream
-└── ui/                       # React console (scaffold)
+│   ├── mock-server/             # Chi mock upstream
+│   ├── vegeta-client/           # loadgen control API (steady/ramp/burst)
+│   └── console-api/             # pipeline control via Docker Engine API
+└── ui/                          # React console (scaffold)
 ```
 
 ## Build script
 
-Single linear script for local use and GitHub Actions later:
-
 ```bash
 chmod +x build/build.sh   # once
 
-./build/build.sh deps     # go mod download + verify
-./build/build.sh test     # go test ./...
-./build/build.sh build    # binary → build/out/mock-server
-./build/build.sh image    # Docker image (scratch)
-./build/build.sh up       # compose up --build
-./build/build.sh down     # compose down
+./build/build.sh deps
+./build/build.sh test
+./build/build.sh build    # TARGET=all → mock-server + vegeta-client
+./build/build.sh image
+./build/build.sh up
+./build/build.sh down
 ./build/build.sh all      # deps → test → build → image
-./build/build.sh          # same as all
 ```
-
-Override binary target (default `mock-server`):
 
 ```bash
 TARGET=mock-server ./build/build.sh build
+TARGET=vegeta-client ./build/build.sh image
+TARGET=all ./build/build.sh build
 ```
 
-## Docker Compose
+## Docker Compose & network
 
-Compose file: [`build/docker-compose.yml`](build/docker-compose.yml).
+Compose: [`build/docker-compose.yml`](build/docker-compose.yml).
+
+All services join the bridge network **`st_net`** and reach each other by **service name** (no localhost confusion inside containers).
+
+| Service | Host port | In-network URL |
+|---------|-----------|----------------|
+| `mock-server` | `8081` | `http://mock-server:8081` |
+| `vegeta-client` | `8090` | `http://vegeta-client:8090` |
+| `rate-limiter` (soon) | `8080` | `http://rate-limiter:8080` |
 
 ```bash
 ./build/build.sh up
-# mock-server → http://localhost:8081
 ```
 
-- Image: `st-do-asign/mock-server:local` (**`FROM scratch`**, ~7MB)
-- Bind: `0.0.0.0:8081` inside the container
-- No in-container healthcheck (scratch has no shell/`wget`); use host `curl` against `/healthz`
+Env for vegeta (compose default until the proxy exists):
 
-Stop:
+| Variable | Default in compose | Meaning |
+|----------|--------------------|---------|
+| `RATE_LIMITER_URL` | `http://mock-server:8081` | Base URL loadgen attacks (switch to `http://rate-limiter:8080` later) |
+| `VEGETA_CLIENT_ADDR` | `0.0.0.0:8090` | Control API listen address |
+| `MOCK_SERVER_ADDR` | `0.0.0.0:8081` | Mock upstream listen address |
+
+All runtime images are **`FROM scratch`** (mock-server, vegeta-client, console-api).  
+`console-api` talks to the Docker Engine over a mounted `docker.sock` — no Docker CLI / Alpine in the image (~10MB).
 
 ```bash
 ./build/build.sh down
 ```
 
-### Run mock-server without Docker
+## Mock server (upstream)
 
-```bash
-cd backend
-MOCK_SERVER_ADDR=0.0.0.0:8081 go run ./mock-server
-# or
-../build/out/mock-server
-```
-
-## Mock server (data-plane upstream)
-
-Chi HTTP mock with ~**500ms** business delay. API keys are **not validated** — used for logging / observability only.
-
-### Host
+Chi mock with ~**500ms** delay. API keys are **not validated** — logging / observability only.
 
 | Setting | Value |
 |---------|--------|
-| Default listen | `0.0.0.0:8081` |
-| Env override | `MOCK_SERVER_ADDR` |
-| Local URL | `http://localhost:8081` |
+| Host URL | `http://localhost:8081` |
+| In-net | `http://mock-server:8081` |
 
-### Endpoints
+| Method | Path |
+|--------|------|
+| `GET` | `/healthz` |
+| `GET` | `/{tenantId}/deviceList` |
+| `POST` / `PUT` | `/{tenantId}/registerDevice` |
 
-| Method | Path | Notes |
-|--------|------|--------|
-| `GET` | `/healthz` | Liveness |
-| `GET` | `/{tenantId}/deviceList` | `tenantId` = int32 |
-| `POST` | `/{tenantId}/registerDevice` | JSON body optional |
-| `PUT` | `/{tenantId}/registerDevice` | JSON body optional |
+**Request:** `US-API-Key`  
+**Response headers:** `US-API-Key`, `US-Tenant`, `US-Upstream-Latency-Ms`, `US-Upstream-Response`, `US-Mapped-API-Keys`, `US-API-Key-Match`
 
-### Request header
-
-| Header | Required | Behavior |
-|--------|----------|----------|
-| `US-API-Key` | No (recommended) | Logged + echoed; not enforced |
-
-### Response observability headers
-
-| Header | Meaning |
-|--------|---------|
-| `US-API-Key` | Echo of request key |
-| `US-Tenant` | Parsed tenant id |
-| `US-Upstream-Latency-Ms` | Measured handler latency |
-| `US-Upstream-Response` | `mock-server` |
-| `US-Mapped-API-Keys` | Comma-separated keys mapped to that tenant |
-| `US-API-Key-Match` | `true` if request key ∈ mapped set |
-
-### Mock tenant → API keys
-
-One tenant can have multiple keys:
-
-| Tenant (`int32`) | API keys |
-|------------------|----------|
+| Tenant | API keys |
+|--------|----------|
 | `1001` | `ak_demo_1001_alpha`, `ak_demo_1001_mobile`, `ak_demo_1001_partner` |
 | `1002` | `ak_demo_1002_beta`, `ak_demo_1002_ci` |
 | `1003` | `ak_demo_1003_gamma` |
 
-### Smoke test
+```bash
+curl -D - -H "US-API-Key: ak_demo_1001_alpha" \
+  http://localhost:8081/1001/deviceList
+```
+
+## Vegeta client (loadgen)
+
+Control API designed for the **Data Plane** UI tab. Sends traffic at configurable RPS through the rate limiter URL (compose DNS).
+
+| Setting | Value |
+|---------|--------|
+| Host URL | `http://localhost:8090` |
+| In-net | `http://vegeta-client:8090` |
+
+### Profiles
+
+| Profile | JSON field | Behavior |
+|---------|------------|----------|
+| `steady` | `steady` | Constant RPS for `duration` |
+| `ramp` | `ramp` | Linear RPS from `fromRps` → `toRps` over `steps` × `stepDuration` |
+| `burst` | `burst` | `baseRps` with spikes of `burstRps` every `burstEvery` for `burstDuration` |
+
+### Control API (UI-ready)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/healthz` | Liveness |
+| `GET` | `/api/v1/profiles` | Profile metadata + defaults for forms |
+| `GET` | `/api/v1/defaults` | Suggested target (`US-API-Key`, path) |
+| `POST` | `/api/v1/runs` | Start a run → `202` + run view |
+| `GET` | `/api/v1/runs` | List runs |
+| `GET` | `/api/v1/runs/{id}` | Poll status + metrics |
+| `POST` | `/api/v1/runs/{id}/stop` | Cancel in-flight run |
+
+### Example — steady via mock (compose network name)
 
 ```bash
-curl -D - \
-  -H "US-API-Key: ak_demo_1001_alpha" \
-  http://localhost:8081/1001/deviceList
+curl -s -X POST http://localhost:8090/api/v1/runs \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "profile": "steady",
+    "target": {
+      "baseUrl": "http://mock-server:8081",
+      "method": "GET",
+      "path": "/1001/deviceList",
+      "headers": { "US-API-Key": "ak_demo_1001_alpha" }
+    },
+    "steady": { "rps": 10, "duration": "15s" }
+  }'
+```
 
-curl -D - \
-  -H "US-API-Key: ak_demo_1002_ci" \
-  -X POST http://localhost:8081/1002/registerDevice \
-  -H "Content-Type: application/json" \
-  -d '{"id":"dev-003","name":"gate"}'
+Ramp / burst:
+
+```bash
+# ramp
+curl -s -X POST http://localhost:8090/api/v1/runs -H 'Content-Type: application/json' -d '{
+  "profile": "ramp",
+  "target": {
+    "baseUrl": "http://mock-server:8081",
+    "method": "GET",
+    "path": "/1001/deviceList",
+    "headers": { "US-API-Key": "ak_demo_1001_mobile" }
+  },
+  "ramp": { "fromRps": 2, "toRps": 20, "steps": 4, "stepDuration": "3s" }
+}'
+
+# burst
+curl -s -X POST http://localhost:8090/api/v1/runs -H 'Content-Type: application/json' -d '{
+  "profile": "burst",
+  "target": {
+    "baseUrl": "http://mock-server:8081",
+    "method": "GET",
+    "path": "/1002/deviceList",
+    "headers": { "US-API-Key": "ak_demo_1002_ci" }
+  },
+  "burst": {
+    "baseRps": 5, "burstRps": 40,
+    "burstEvery": "8s", "burstDuration": "2s", "duration": "24s"
+  }
+}'
+```
+
+When the inline proxy lands, set:
+
+```bash
+RATE_LIMITER_URL=http://rate-limiter:8080 ./build/build.sh up
+# or export in a .env next to compose
 ```
 
 ## Configuration summary
 
 | Variable / file | Component | Purpose |
 |-----------------|-----------|---------|
-| `MOCK_SERVER_ADDR` | mock-server | Listen address (default `0.0.0.0:8081`) |
-| `build/docker-compose.yml` | Compose | Service wiring, ports, env |
-| `build/Dockerfile.mock-server` | Image | Scratch runtime image |
-| `backend/mock-server/main.go` | mock-server | Routes, delays, tenant↔key map, `US-*` headers |
+| `st_net` | Compose network | Service-name DNS |
+| `MOCK_SERVER_ADDR` | mock-server | Listen address |
+| `VEGETA_CLIENT_ADDR` | vegeta-client | Control API listen |
+| `RATE_LIMITER_URL` | vegeta-client | Attack base URL (proxy or mock) |
+| `build/docker-compose.yml` | Compose | Wiring + network |
+| `backend/vegeta-client/` | loadgen | Profiles + UI control API |
+
+## React console
+
+```bash
+# terminals: backends up, then UI
+./build/build.sh up
+cd ui && npm install && npm run dev
+# → http://localhost:5173
+```
+
+| Page | Plane | What it does |
+|------|-------|----------------|
+| Overview | — | Compose containers + `st_net` connectivity; health green / red / planned |
+| Mock Backend | Data | Live logs + hardcoded API docs in the UI |
+| Vegeta Client | Data | Configure steady / ramp / burst and run / stop / metrics |
+| Control Plane | Control | Placeholder for keys / paths / rules |
+
+Env overrides: `VITE_MOCK_URL`, `VITE_VEGETA_URL`, `VITE_PROXY_URL`.
+
+Mock extras: `GET /api/v1/logs`, `GET /openapi.json`, `GET /docs`.
 
 ## Status
 
-**Done:** mock upstream + scratch image + shared `build/` script & compose.
+**Done:** mock upstream (+ logs/swagger), vegeta loadgen, scratch images, `st_net`, React console shell.
 
-**Next:** control-plane API, MySQL/Redis in compose, inline rate-limit proxy, Vegeta client, React console.
+**Next:** control-plane API, MySQL/Redis, inline `rate-limiter` proxy.

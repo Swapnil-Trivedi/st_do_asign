@@ -1,6 +1,11 @@
-# Local / CI compose stack. Extend with MySQL, Redis, proxy, UI as services land.
-# mock-server is scratch-based (no in-container healthcheck binary).
+# Local / CI compose stack.
+# Services resolve each other by name on st_net (e.g. http://mock-server:8081).
 name: st-do-asign
+
+networks:
+  st_net:
+    name: st_net
+    driver: bridge
 
 services:
   mock-server:
@@ -9,8 +14,47 @@ services:
       dockerfile: build/Dockerfile.mock-server
     image: st-do-asign/mock-server:local
     container_name: st-mock-server
+    networks:
+      - st_net
     ports:
       - "8081:8081"
     environment:
       MOCK_SERVER_ADDR: "0.0.0.0:8081"
+    restart: unless-stopped
+
+  vegeta-client:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.vegeta-client
+    image: st-do-asign/vegeta-client:local
+    container_name: st-vegeta-client
+    networks:
+      - st_net
+    ports:
+      - "8090:8090"
+    environment:
+      VEGETA_CLIENT_ADDR: "0.0.0.0:8090"
+      RATE_LIMITER_URL: "${RATE_LIMITER_URL:-http://mock-server:8081}"
+    depends_on:
+      - mock-server
+    restart: unless-stopped
+
+  # Scratch image; orchestrates sibling services via Docker Engine API + docker.sock.
+  console-api:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.console-api
+    image: st-do-asign/console-api:local
+    container_name: st-console-api
+    networks:
+      - st_net
+    ports:
+      - "8095:8095"
+    environment:
+      CONSOLE_API_ADDR: "0.0.0.0:8095"
+      PROJECT_ROOT: /project
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ..:/project:ro
     restart: unless-stopped

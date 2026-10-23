@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 )
 
 const (
@@ -49,11 +51,20 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "OPTIONS"},
+		AllowedHeaders: []string{"Accept", "Content-Type", apiKeyHeader},
+		MaxAge:         300,
+	}))
 	r.Use(apiKeyAccessLogger)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	r.Get("/openapi.json", serveOpenAPI)
+	r.Get("/docs", serveDocs)
+	r.Get("/api/v1/logs", serveLogs)
 
 	r.Route("/{tenantId}", func(r chi.Router) {
 		r.Get("/deviceList", deviceList)
@@ -61,19 +72,29 @@ func main() {
 		r.Put("/registerDevice", registerDevice)
 	})
 
-	log.Printf("mock-server listening on http://%s", addr)
-	log.Printf("auth header: %s (not validated; echoed + logged)", apiKeyHeader)
-	log.Printf("mock tenant→keys map (one tenant, many keys):")
+	boot := fmt.Sprintf("mock-server listening on http://%s", addr)
+	log.Print(boot)
+	accessLogs.add("info", boot)
+	accessLogs.add("info", fmt.Sprintf("auth header: %s (not validated; echoed + logged)", apiKeyHeader))
 	for id, keys := range tenantAPIKeys {
-		log.Printf("  tenant=%d keys=[%s]", id, strings.Join(keys, ", "))
+		accessLogs.add("info", fmt.Sprintf("tenant=%d keys=[%s]", id, strings.Join(keys, ", ")))
 	}
-	log.Printf("  GET  http://localhost:8081/{tenantId}/deviceList")
-	log.Printf("  POST http://localhost:8081/{tenantId}/registerDevice")
-	log.Printf("  PUT  http://localhost:8081/{tenantId}/registerDevice")
 
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("listen: %v", err)
 	}
+}
+
+func serveLogs(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"logs": accessLogs.snapshot(limit),
+	})
 }
 
 func apiKeyAccessLogger(next http.Handler) http.Handler {
@@ -86,7 +107,7 @@ func apiKeyAccessLogger(next http.Handler) http.Handler {
 		tenantRaw := chi.URLParam(r, "tenantId")
 		reqID := middleware.GetReqID(r.Context())
 
-		log.Printf(
+		msg := fmt.Sprintf(
 			"access method=%s path=%s status=%d latency_ms=%d request_id=%s tenant=%s api_key=%s",
 			r.Method,
 			r.URL.Path,
@@ -96,6 +117,8 @@ func apiKeyAccessLogger(next http.Handler) http.Handler {
 			tenantRaw,
 			displayKey(apiKey),
 		)
+		log.Print(msg)
+		accessLogs.add("access", msg)
 	})
 }
 
@@ -160,7 +183,9 @@ func beginUpstream(w http.ResponseWriter, r *http.Request) (*upstreamCtx, bool) 
 	tenantRaw := chi.URLParam(r, "tenantId")
 	tenantID64, err := strconv.ParseInt(tenantRaw, 10, 32)
 	if err != nil {
-		log.Printf("reject invalid tenant_id=%q request_id=%s", tenantRaw, middleware.GetReqID(r.Context()))
+		msg := fmt.Sprintf("reject invalid tenant_id=%q", tenantRaw)
+		log.Print(msg)
+		accessLogs.add("warn", msg)
 		http.Error(w, `{"error":"tenantId must be an int32"}`, http.StatusBadRequest)
 		return nil, false
 	}
@@ -175,17 +200,12 @@ func beginUpstream(w http.ResponseWriter, r *http.Request) (*upstreamCtx, bool) 
 		mappedKeysLog = strings.Join(mappedKeys, ",")
 	}
 
-	log.Printf(
-		"upstream_start request_id=%s method=%s path=%s tenant=%d api_key=%s mapped_keys=[%s] known_tenant=%t key_matches_map=%t",
-		middleware.GetReqID(r.Context()),
-		r.Method,
-		r.URL.Path,
-		tenantID,
-		displayKey(apiKey),
-		mappedKeysLog,
-		knownTenant,
-		keyMatch,
+	msg := fmt.Sprintf(
+		"upstream_start method=%s path=%s tenant=%d api_key=%s mapped_keys=[%s] key_matches_map=%t",
+		r.Method, r.URL.Path, tenantID, displayKey(apiKey), mappedKeysLog, keyMatch,
 	)
+	log.Print(msg)
+	accessLogs.add("upstream", msg)
 
 	return &upstreamCtx{
 		tenantID:   tenantID,
@@ -198,8 +218,6 @@ func beginUpstream(w http.ResponseWriter, r *http.Request) (*upstreamCtx, bool) 
 
 func writeUpstreamHeaders(w http.ResponseWriter, ctx *upstreamCtx) {
 	latencyMs := time.Since(ctx.started).Milliseconds()
-
-	// Observability headers — must be set before WriteHeader/body.
 	w.Header().Set(apiKeyHeader, ctx.apiKey)
 	w.Header().Set(tenantHeader, strconv.FormatInt(int64(ctx.tenantID), 10))
 	w.Header().Set(latencyHeader, strconv.FormatInt(latencyMs, 10))
@@ -212,13 +230,12 @@ func writeUpstreamHeaders(w http.ResponseWriter, ctx *upstreamCtx) {
 
 func logUpstreamDone(ctx *upstreamCtx) {
 	latencyMs := time.Since(ctx.started).Milliseconds()
-	log.Printf(
+	msg := fmt.Sprintf(
 		"upstream_done tenant=%d api_key=%s latency_ms=%d key_matches_map=%t",
-		ctx.tenantID,
-		displayKey(ctx.apiKey),
-		latencyMs,
-		ctx.keyMatch,
+		ctx.tenantID, displayKey(ctx.apiKey), latencyMs, ctx.keyMatch,
 	)
+	log.Print(msg)
+	accessLogs.add("upstream", msg)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

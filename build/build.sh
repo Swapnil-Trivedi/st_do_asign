@@ -3,7 +3,7 @@
 # Usage:
 #   ./build/build.sh              # same as: all
 #   ./build/build.sh deps|test|build|image|up|down|all
-#   TARGET=mock-server ./build/build.sh build
+#   TARGET=mock-server|vegeta-client|console-api|all ./build/build.sh build
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,7 +11,7 @@ BUILD_DIR="${ROOT}/build"
 BACKEND_DIR="${ROOT}/backend"
 OUT_DIR="${BUILD_DIR}/out"
 COMPOSE_FILE="${BUILD_DIR}/docker-compose.yml"
-TARGET="${TARGET:-mock-server}"
+TARGET="${TARGET:-all}"
 CMD="${1:-all}"
 
 export PATH="${PATH}:/opt/homebrew/bin:/usr/local/go/bin"
@@ -28,6 +28,14 @@ compose() {
   else
     die "docker compose not available"
   fi
+}
+
+resolve_targets() {
+  case "${TARGET}" in
+    all) echo "mock-server vegeta-client console-api" ;;
+    mock-server|vegeta-client|console-api) echo "${TARGET}" ;;
+    *) die "unknown TARGET=${TARGET} (mock-server|vegeta-client|console-api|all)" ;;
+  esac
 }
 
 step_deps() {
@@ -50,40 +58,48 @@ step_test() {
   )
 }
 
-step_build() {
-  log "build: ${TARGET} → ${OUT_DIR}/${TARGET}"
-  need go
-  mkdir -p "${OUT_DIR}"
-  case "${TARGET}" in
-    mock-server)
-      (
-        cd "${BACKEND_DIR}"
-        CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "${OUT_DIR}/mock-server" ./mock-server
-      )
-      ;;
-    *)
-      die "unknown TARGET=${TARGET} (supported: mock-server)"
-      ;;
-  esac
-  log "build ok: $(ls -la "${OUT_DIR}/${TARGET}")"
+build_one() {
+  local name="$1"
+  log "build: ${name} → ${OUT_DIR}/${name}"
+  (
+    cd "${BACKEND_DIR}"
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "${OUT_DIR}/${name}" "./${name}"
+  )
 }
 
-step_image() {
-  log "image: docker build mock-server"
-  need docker
+step_build() {
+  need go
+  mkdir -p "${OUT_DIR}"
+  for t in $(resolve_targets); do
+    build_one "${t}"
+  done
+}
+
+image_one() {
+  local name="$1"
+  local dockerfile="${BUILD_DIR}/Dockerfile.${name}"
+  log "image: docker build ${name}"
   docker build \
-    -f "${BUILD_DIR}/Dockerfile.mock-server" \
-    -t st-do-asign/mock-server:local \
+    -f "${dockerfile}" \
+    -t "st-do-asign/${name}:local" \
     "${ROOT}"
 }
 
+step_image() {
+  need docker
+  for t in $(resolve_targets); do
+    image_one "${t}"
+  done
+}
+
 step_up() {
-  log "up: docker compose"
+  log "up: docker compose (network: st_net)"
   need docker
   compose up -d --build
-  log "mock-server → http://localhost:8081"
-  log "  GET  /{tenantId}/deviceList"
-  log "  POST /{tenantId}/registerDevice  (header: US-API-Key)"
+  log "network DNS: mock-server, vegeta-client, console-api"
+  log "mock-server    → http://localhost:8081"
+  log "vegeta-client  → http://localhost:8090"
+  log "console-api    → http://localhost:8095  (UI pipeline control)"
 }
 
 step_down() {

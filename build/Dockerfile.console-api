@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+# Scratch runtime — talks to Docker Engine via mounted docker.sock (no CLI in image).
+
+FROM golang:1.27-alpine AS build
+WORKDIR /src
+
+RUN apk add --no-cache git ca-certificates \
+  && update-ca-certificates
+
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ ./
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+  go build -trimpath -ldflags="-s -w" -o /out/console-api ./console-api
+
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /out/console-api /console-api
+ENV CONSOLE_API_ADDR=0.0.0.0:8095
+ENV PROJECT_ROOT=/project
+ENV DOCKER_HOST=unix:///var/run/docker.sock
+# Runs as root so it can access the mounted docker.sock (still a scratch image).
+EXPOSE 8095
+ENTRYPOINT ["/console-api"]
