@@ -105,7 +105,7 @@ func (a *api) listTestCatalog(w http.ResponseWriter, _ *http.Request) {
 			{
 				"id":          "e2e",
 				"label":       "End-to-end tests",
-				"description": "Control-plane → Mongo → rate-limiter → Redis/mock. Creates policy via CP, waits for proxy poll, asserts quota + allow/429. Skips when rate-limiter is unreachable or Mongo is not shared.",
+				"description": "Control-plane → Mongo → rate-limiter → Redis/mock. Includes health/propagate/allow/429 plus predefined scenarios: dual API-key configs, tenant-id (single + multi key), and per-path limits. Skips when rate-limiter is unreachable or Mongo is not shared.",
 			},
 			{
 				"id":          "all",

@@ -122,7 +122,7 @@ func (a *api) e2eTestCases() []testCase {
 	a.routes(h)
 	rlBase := rateLimiterBaseURL()
 
-	return []testCase{
+	cases := []testCase{
 		{
 			id: "e2e-rate-limiter-health", suite: "e2e",
 			name:        "rate-limiter health reachable",
@@ -408,6 +408,7 @@ func (a *api) e2eTestCases() []testCase {
 			},
 		},
 	}
+	return append(cases, a.e2eScenarioCases()...)
 }
 
 // provisionE2EPolicy creates config + namespace + header/path rules. cleanup always safe to call.

@@ -481,7 +481,7 @@ Service: `control-plane` · host `http://localhost:8091` · network `http://cont
 | `unit` | Validators + isolated in-memory HTTP API |
 | `functional` | Live store CRUD, conflicts, in-use guards |
 | `concurrency` | Parallel writers / duplicate-name races |
-| `e2e` | Control-plane write → proxy poll → quota / allow / 429 (needs `RATE_LIMITER_URL`; skips if proxy unreachable or Mongo not shared) |
+| `e2e` | Control-plane write → proxy poll → quota / allow / 429, plus scenarios: dual API-key configs (same tenant), tenant-id single/multi key, per-path limits (needs `RATE_LIMITER_URL`; skips if proxy unreachable or Mongo not shared) |
 | `all` | unit → functional → concurrency → e2e |
 
 E2E uses `RATE_LIMITER_URL` (default `http://localhost:8080` on host, `http://rate-limiter:8080` in compose) and waits ~`3 × POLICY_POLL_INTERVAL` for the proxy policy cache.

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -95,7 +96,7 @@ func (s *selftestRunner) listTestCatalog(w http.ResponseWriter, _ *http.Request)
 			{
 				"id":          "unit",
 				"label":       "Unit tests",
-				"description": "Matcher specificity, subject builders, policy-cache swap, and Lua algorithms against isolated miniredis (no live Redis/Mongo).",
+				"description": "Matcher, policy-cache, and Lua algorithms (allow/deny, refill, window rollover, subject/ns isolation, peek, reset, concurrency) against isolated miniredis.",
 			},
 			{
 				"id":          "functional",
@@ -406,6 +407,280 @@ func unitTestCases() []testCase {
 					}
 				}
 				return pass("sliding limit enforced", "call1 allow", "call2 allow", "call3 deny")
+			},
+		},
+		{
+			id: "ut-fixed-token-refill", suite: "unit",
+			name:        "fixed_token refills after time",
+			description: "Unit: after exhausting burst=1, advancing the clock 1s at sustainedRps=1 must allow again; deny sets resetMs>0.",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				params := map[string]any{"sustainedRps": int64(1), "burst": int64(1)}
+				subj := "selftest-" + uuid.NewString()[:8]
+				t0 := int64(1_700_000_000_000)
+				restore := setUnixMilli(t0)
+				defer restore()
+				r1, err := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", subj, params)
+				if err != nil || !r1.Allowed {
+					return fail(fmt.Errorf("r1 allowed=%v err=%v", r1.Allowed, err), "r1 allow")
+				}
+				r2, err := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", subj, params)
+				if err != nil || r2.Allowed {
+					return fail(fmt.Errorf("r2 allowed=%v err=%v", r2.Allowed, err), "r2 deny")
+				}
+				if r2.ResetMs <= 0 {
+					return fail(fmt.Errorf("resetMs=%d", r2.ResetMs), "resetMs > 0")
+				}
+				restore2 := setUnixMilli(t0 + 1000)
+				defer restore2()
+				r3, err := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", subj, params)
+				if err != nil || !r3.Allowed {
+					return fail(fmt.Errorf("r3 allowed=%v err=%v", r3.Allowed, err), "r3 allow after refill")
+				}
+				return pass("token refill", "deny resetMs>0", "allow after +1s")
+			},
+		},
+		{
+			id: "ut-fixed-window-rollover", suite: "unit",
+			name:        "fixed_window rolls into next window",
+			description: "Unit: after limit=1 deny in window W, advancing now past window boundary must allow in W+1.",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				params := map[string]any{"limit": int64(1), "windowSeconds": int64(1)}
+				subj := "selftest-" + uuid.NewString()[:8]
+				t0 := int64(1_700_000_000_000)
+				restore := setUnixMilli(t0)
+				defer restore()
+				r1, _ := lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj, params)
+				r2, _ := lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj, params)
+				if !r1.Allowed || r2.Allowed {
+					return fail(fmt.Errorf("r1=%v r2=%v", r1.Allowed, r2.Allowed), "allow then deny")
+				}
+				restore2 := setUnixMilli(t0 + 1000)
+				defer restore2()
+				r3, err := lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj, params)
+				if err != nil || !r3.Allowed {
+					return fail(fmt.Errorf("r3 allowed=%v err=%v", r3.Allowed, err), "allow after rollover")
+				}
+				return pass("window rollover", "deny in W", "allow in W+1")
+			},
+		},
+		{
+			id: "ut-sliding-window-expire", suite: "unit",
+			name:        "sliding_window expires old members",
+			description: "Unit: after denying at limit=1, advancing past windowSeconds must trim the ZSET member and allow again.",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				params := map[string]any{"limit": int64(1), "windowSeconds": int64(1)}
+				subj := "selftest-" + uuid.NewString()[:8]
+				t0 := int64(1_700_000_000_000)
+				restore := setUnixMilli(t0)
+				defer restore()
+				r1, _ := lim.Evaluate(ctx, AlgoSlidingWindow, "ut-ns", subj, params)
+				r2, _ := lim.Evaluate(ctx, AlgoSlidingWindow, "ut-ns", subj, params)
+				if !r1.Allowed || r2.Allowed || r2.ResetMs <= 0 {
+					return fail(fmt.Errorf("r1=%v r2=%v reset=%d", r1.Allowed, r2.Allowed, r2.ResetMs))
+				}
+				restore2 := setUnixMilli(t0 + 1001)
+				defer restore2()
+				r3, err := lim.Evaluate(ctx, AlgoSlidingWindow, "ut-ns", subj, params)
+				if err != nil || !r3.Allowed {
+					return fail(fmt.Errorf("r3 allowed=%v err=%v", r3.Allowed, err), "allow after expiry")
+				}
+				return pass("sliding expiry", "deny resetMs>0", "allow after +1001ms")
+			},
+		},
+		{
+			id: "ut-subject-isolation", suite: "unit",
+			name:        "subjects are isolated",
+			description: "Unit: exhausting quota for subject A must not affect subject B under the same namespace.",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				params := map[string]any{"sustainedRps": int64(1), "burst": int64(1)}
+				a1, _ := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", "subj-a", params)
+				a2, _ := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", "subj-a", params)
+				b1, err := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", "subj-b", params)
+				if err != nil || !a1.Allowed || a2.Allowed || !b1.Allowed {
+					return fail(fmt.Errorf("a1=%v a2=%v b1=%v err=%v", a1.Allowed, a2.Allowed, b1.Allowed, err))
+				}
+				return pass("subject isolation", "A exhausted", "B still allowed")
+			},
+		},
+		{
+			id: "ut-namespace-isolation", suite: "unit",
+			name:        "namespaces are isolated",
+			description: "Unit: same subject under different namespaceIds must not share Redis quota keys.",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				params := map[string]any{"limit": int64(1), "windowSeconds": int64(60)}
+				r1, _ := lim.Evaluate(ctx, AlgoFixedWindow, "ns-1", "same", params)
+				r2, _ := lim.Evaluate(ctx, AlgoFixedWindow, "ns-1", "same", params)
+				r3, err := lim.Evaluate(ctx, AlgoFixedWindow, "ns-2", "same", params)
+				if err != nil || !r1.Allowed || r2.Allowed || !r3.Allowed {
+					return fail(fmt.Errorf("r1=%v r2=%v r3=%v err=%v", r1.Allowed, r2.Allowed, r3.Allowed, err))
+				}
+				return pass("namespace isolation", "ns-1 exhausted", "ns-2 allowed")
+			},
+		},
+		{
+			id: "ut-peek-all-algos", suite: "unit",
+			name:        "peek does not consume (all algos)",
+			description: "Unit: Peek after Evaluate must report remaining/consumed and a second Peek must not change remaining for token, fixed, and sliding.",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				subj := "selftest-" + uuid.NewString()[:8]
+
+				ftParams := map[string]any{"sustainedRps": int64(1), "burst": int64(5)}
+				if _, err := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", subj+"-ft", ftParams); err != nil {
+					return fail(err, "ft evaluate")
+				}
+				ft1, err := lim.Peek(ctx, AlgoFixedToken, "ut-ns", subj+"-ft", ftParams)
+				if err != nil || ft1.Remaining != 4 || ft1.Consumed != 1 {
+					return fail(fmt.Errorf("ft peek=%+v err=%v", ft1, err), "ft remaining==4")
+				}
+				ft2, _ := lim.Peek(ctx, AlgoFixedToken, "ut-ns", subj+"-ft", ftParams)
+				if ft2.Remaining != ft1.Remaining {
+					return fail(fmt.Errorf("ft peek mutated %d→%d", ft1.Remaining, ft2.Remaining))
+				}
+
+				fwParams := map[string]any{"limit": int64(3), "windowSeconds": int64(60)}
+				_, _ = lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj+"-fw", fwParams)
+				_, _ = lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj+"-fw", fwParams)
+				fw, err := lim.Peek(ctx, AlgoFixedWindow, "ut-ns", subj+"-fw", fwParams)
+				if err != nil || fw.Remaining != 1 || fw.Consumed != 2 || fw.ResetMs <= 0 {
+					return fail(fmt.Errorf("fw peek=%+v err=%v", fw, err), "fw remaining==1")
+				}
+
+				swParams := map[string]any{"limit": int64(2), "windowSeconds": int64(60)}
+				if _, err := lim.Evaluate(ctx, AlgoSlidingWindow, "ut-ns", subj+"-sw", swParams); err != nil {
+					return fail(err, "sw evaluate")
+				}
+				sw, err := lim.Peek(ctx, AlgoSlidingWindow, "ut-ns", subj+"-sw", swParams)
+				if err != nil || sw.Remaining != 1 || sw.Consumed != 1 {
+					return fail(fmt.Errorf("sw peek=%+v err=%v", sw, err), "sw remaining==1")
+				}
+				return pass("peek all algos", "ft/fw/sw remaining stable")
+			},
+		},
+		{
+			id: "ut-reset-clears-quota", suite: "unit",
+			name:        "Reset clears Redis quota",
+			description: "Unit: after deny, Limiter.Reset must delete keys so the next Evaluate allows again (token + fixed_window).",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				subj := "selftest-" + uuid.NewString()[:8]
+
+				ft := map[string]any{"sustainedRps": int64(1), "burst": int64(1)}
+				_, _ = lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", subj+"-ft", ft)
+				denied, _ := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", subj+"-ft", ft)
+				if denied.Allowed {
+					return fail(fmt.Errorf("expected deny before reset"))
+				}
+				n, err := lim.Reset(ctx, AlgoFixedToken, "ut-ns", subj+"-ft")
+				if err != nil || n < 1 {
+					return fail(fmt.Errorf("reset n=%d err=%v", n, err), "deleted >= 1")
+				}
+				again, err := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", subj+"-ft", ft)
+				if err != nil || !again.Allowed {
+					return fail(fmt.Errorf("after reset allowed=%v err=%v", again.Allowed, err))
+				}
+
+				fw := map[string]any{"limit": int64(1), "windowSeconds": int64(60)}
+				_, _ = lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj+"-fw", fw)
+				_, _ = lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj+"-fw", fw)
+				if _, err := lim.Reset(ctx, AlgoFixedWindow, "ut-ns", subj+"-fw"); err != nil {
+					return fail(err, "fw reset")
+				}
+				fwAgain, err := lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj+"-fw", fw)
+				if err != nil || !fwAgain.Allowed {
+					return fail(fmt.Errorf("fw after reset allowed=%v err=%v", fwAgain.Allowed, err))
+				}
+				return pass("reset clears", "token allow after reset", "fixed_window allow after reset")
+			},
+		},
+		{
+			id: "ut-concurrent-limit", suite: "unit",
+			name:        "concurrent evaluates respect limit",
+			description: "Unit: 50 parallel Evaluate calls against fixed_window limit=20 must allow exactly 20 (Lua atomicity).",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				params := map[string]any{"limit": int64(20), "windowSeconds": int64(60)}
+				subj := "selftest-" + uuid.NewString()[:8]
+				const workers = 50
+				var allowed int64
+				var wg sync.WaitGroup
+				var mu sync.Mutex
+				wg.Add(workers)
+				for i := 0; i < workers; i++ {
+					go func() {
+						defer wg.Done()
+						r, err := lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", subj, params)
+						if err == nil && r.Allowed {
+							mu.Lock()
+							allowed++
+							mu.Unlock()
+						}
+					}()
+				}
+				wg.Wait()
+				if allowed != 20 {
+					return fail(fmt.Errorf("allowed=%d want=20", allowed), "allowed == 20")
+				}
+				return pass("concurrent limit", "50 workers", "exactly 20 allows")
+			},
+		},
+		{
+			id: "ut-invalid-params", suite: "unit",
+			name:        "invalid params / unknown algo",
+			description: "Unit: missing/invalid params and unknown algorithm ids must return errors from Evaluate.",
+			fn: func(ctx context.Context) testOutcome {
+				lim, cleanup, err := miniLimiter()
+				if err != nil {
+					return fail(err)
+				}
+				defer cleanup()
+				if _, err := lim.Evaluate(ctx, AlgoFixedToken, "ut-ns", "x", map[string]any{"burst": int64(1)}); err == nil {
+					return fail(fmt.Errorf("expected missing sustainedRps error"))
+				}
+				if _, err := lim.Evaluate(ctx, AlgoFixedWindow, "ut-ns", "x", map[string]any{"limit": int64(0), "windowSeconds": int64(1)}); err == nil {
+					return fail(fmt.Errorf("expected limit>=1 error"))
+				}
+				if _, err := lim.Evaluate(ctx, "nope", "ut-ns", "x", map[string]any{"limit": int64(1), "windowSeconds": int64(1)}); err == nil {
+					return fail(fmt.Errorf("expected unknown algorithm error"))
+				}
+				return pass("validation errors", "missing param", "limit<1", "unknown algo")
 			},
 		},
 		{

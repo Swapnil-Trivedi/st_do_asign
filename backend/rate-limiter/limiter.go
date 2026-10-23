@@ -39,6 +39,15 @@ type Limiter struct {
 	slidePeek   *redis.Script
 }
 
+// unixMilli is the clock Evaluate/Peek pass into Lua (overridable in tests).
+var unixMilli = func() int64 { return time.Now().UnixMilli() }
+
+func setUnixMilli(ms int64) (restore func()) {
+	prev := unixMilli
+	unixMilli = func() int64 { return ms }
+	return func() { unixMilli = prev }
+}
+
 func newLimiter(rdb *redis.Client) *Limiter {
 	return &Limiter{
 		rdb:        rdb,
@@ -61,7 +70,7 @@ func redisKey(algorithm, namespaceID, subject string) string {
 
 func (l *Limiter) Evaluate(ctx context.Context, algorithm, namespaceID, subject string, params map[string]any) (LimitResult, error) {
 	key := redisKey(algorithm, namespaceID, subject)
-	nowMs := time.Now().UnixMilli()
+	nowMs := unixMilli()
 
 	switch algorithm {
 	case AlgoFixedToken:
@@ -135,7 +144,7 @@ func (l *Limiter) Reset(ctx context.Context, algorithm, namespaceID, subject str
 // Peek returns current quota state without consuming a unit.
 func (l *Limiter) Peek(ctx context.Context, algorithm, namespaceID, subject string, params map[string]any) (QuotaState, error) {
 	key := redisKey(algorithm, namespaceID, subject)
-	nowMs := time.Now().UnixMilli()
+	nowMs := unixMilli()
 
 	var remaining, limit, resetMs, consumed int64
 	var err error

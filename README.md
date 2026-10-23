@@ -126,7 +126,7 @@ Console **Testing** tab → **Control plane** (or curl) runs suites against the 
 | `unit` | Validators + in-memory API |
 | `functional` | Live store CRUD / conflicts |
 | `concurrency` | Parallel writers |
-| `e2e` | CP → Mongo → rate-limiter → mock (quota, allow, 429) |
+| `e2e` | CP → Mongo → rate-limiter → mock (quota, allow, 429) + predefined scenarios: dual API-key configs, tenant-id (single + multi key), per-path limits |
 | `all` | Everything above |
 
 ```bash
