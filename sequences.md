@@ -287,6 +287,36 @@ sequenceDiagram
 
 ---
 
+## 9. E2E automation (console-api)
+
+UI tab **E2E** → `POST /api/v1/e2e/run` on console-api. Ensures fixtures via control-plane, drives direct and/or multi-Vegeta load, peeks quota, diffs mock logs.
+
+```mermaid
+sequenceDiagram
+  participant UI as E2E_Tab
+  participant CA as console_api
+  participant CP as control_plane
+  participant Veg as vegeta_client
+  participant RL as rate_limiter_LB
+  participant Mock as mock_server
+
+  UI->>CA: POST /api/v1/e2e/run groups or setups
+  CA->>CP: upsert e2e configs namespaces rules
+  CA->>CA: wait policy poll
+  par multi_vegeta
+    CA->>Veg: POST /api/v1/runs job1
+    CA->>Veg: POST /api/v1/runs job2
+  and direct
+    CA->>RL: concurrent GETs
+  end
+  CA->>Veg: poll until completed
+  CA->>RL: GET /api/v1/quota
+  CA->>Mock: GET /api/v1/logs
+  CA-->>UI: E2EReport allow_429 analytics
+```
+
+---
+
 ## Timing cheat sheet
 
 | Step | Typical latency driver |
@@ -295,6 +325,7 @@ sequenceDiagram
 | Redis Lua | Sub-ms local; shared across replicas |
 | Allow forward | Dominated by upstream (mock ~500ms demo delay) |
 | Deny | Redis only — no upstream |
+| E2E multi-Vegeta | Dominated by vegeta duration + mock latency |
 
 ---
 
@@ -307,3 +338,4 @@ sequenceDiagram
 | Control plane CRUD | `http://localhost:8091` |
 | Vegeta control API | `http://localhost:8090` |
 | Mock upstream direct | `http://localhost:8081` |
+| E2E automation | `http://localhost:8095/api/v1/e2e/*` |

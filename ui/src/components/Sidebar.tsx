@@ -1,12 +1,18 @@
 import { NavLink } from 'react-router-dom'
 import { PlaneTag } from './PlaneTag'
 
-const links = [
-  { to: '/', label: 'Overview', hint: 'Compose topology', plane: null as null | 'control' | 'data' },
-  { to: '/rate-limiter', label: 'Rate Limiter', hint: 'Namespaces · configs', plane: 'control' as const },
-  { to: '/testing', label: 'Testing', hint: 'Control-plane UTs', plane: 'control' as const },
-  { to: '/mock-backend', label: 'Mock Backend', hint: 'Logs & API docs', plane: 'data' as const },
-  { to: '/vegeta', label: 'Vegeta Client', hint: 'Load profiles', plane: 'data' as const },
+const links: {
+  to: string
+  label: string
+  hint: string
+  plane: null | 'control' | 'data'
+}[] = [
+  { to: '/', label: 'Overview', hint: 'Compose topology', plane: null },
+  { to: '/rate-limiter', label: 'Rate Limiter', hint: 'Live obs · policies', plane: 'control' },
+  { to: '/testing', label: 'Testing', hint: 'CP + DP suites', plane: null },
+  { to: '/e2e', label: 'E2E', hint: 'Stack · Vegeta · concurrency', plane: 'data' },
+  { to: '/mock-backend', label: 'Mock Backend', hint: 'Logs & API docs', plane: 'data' },
+  { to: '/vegeta', label: 'Vegeta Client', hint: 'Load profiles', plane: 'data' },
 ]
 
 export function Sidebar() {

@@ -147,7 +147,7 @@ export function ControlPlaneDocsPanel() {
         <h2>Swagger (OpenAPI 3)</h2>
         <p className="muted">
           Hardcoded OpenAPI stub — control plane + data-plane{' '}
-          <code>GET /api/v1/quota</code>.
+          <code>GET /api/v1/quota</code> and <code>/api/v1/tests/*</code>.
         </p>
         <pre className="docs__pre cp-docs__yaml">{CP_OPENAPI_YAML}</pre>
       </section>

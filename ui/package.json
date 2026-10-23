@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:ci": "vitest run --reporter=default --reporter=junit --outputFile.junit=../reports/ui-junit.xml",
     "test:watch": "vitest"
   },
   "dependencies": {

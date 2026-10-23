@@ -502,7 +502,17 @@ Redis detail: [`redis-schema.md`](redis-schema.md).
 |--------|------|---------|
 | `GET` | `/healthz` | Liveness (`{"status":"ok","instance":"a\|b"}`) |
 | `GET` | `/api/v1/quota` | **Observable quota** — peek remaining / consumed / reset (does **not** consume) |
+| `GET` | `/api/v1/tests/catalog` | List data-plane test suites (`unit`, `functional`, `all`) |
+| `POST` | `/api/v1/tests/run?suite=unit\|functional\|all` | Execute matcher / Lua / live Redis suites; same report shape as control-plane |
 | `*` | `/*` | Inline proxy: match rules → Redis Lua → allow forward upstream or `429` |
+
+**Data-plane suites** (Console **Testing** → Data plane)
+
+| Suite | What it covers |
+|-------|----------------|
+| `unit` | Matcher specificity, subjects, policy-cache swap, algorithms on isolated miniredis |
+| `functional` | Live Redis evaluate/peek, healthz/quota HTTP, match against loaded policy (skips when empty) |
+| `all` | unit → functional |
 
 ### `GET /api/v1/quota`
 

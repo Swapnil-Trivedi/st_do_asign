@@ -54,6 +54,9 @@ chmod +x build/build.sh   # once
 ./build/build.sh up
 ./build/build.sh down
 ./build/build.sh all      # deps → test → build → image
+
+# Optional: JUnit + coverage HTML (same as CI)
+REPORT_DIR="$(pwd)/reports" ./build/build.sh test
 ```
 
 ```bash
@@ -61,6 +64,19 @@ TARGET=rate-limiter ./build/build.sh build
 TARGET=control-plane ./build/build.sh image
 TARGET=all ./build/build.sh build
 ```
+
+## CI (GitHub Actions)
+
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+| Check | What it does |
+|-------|----------------|
+| **Backend unit tests** | `gotestsum` → `reports/backend-junit.xml` + coverage HTML |
+| **UI unit tests** | Vitest JUnit → `reports/ui-junit.xml` |
+| **Unit test results** | Publishes JUnit as a commit check |
+| **Unit tests green** | Aggregate gate — **green only when all UTs pass** (use this for branch protection) |
+
+Reports are uploaded as workflow artifacts on every run.
 
 ## Docker Compose & network
 
@@ -103,7 +119,7 @@ curl -sS -X PUT http://localhost:8091/api/v1/namespaces/<id> \
 
 ### Control-plane test suites
 
-Console **Testing** tab (or curl) runs suites against the live control-plane:
+Console **Testing** tab → **Control plane** (or curl) runs suites against the live control-plane:
 
 | Suite | Coverage |
 |-------|----------|
@@ -119,6 +135,23 @@ curl -sS -X POST 'http://localhost:8091/api/v1/tests/run?suite=e2e' | jq .
 ```
 
 E2E needs the compose stack up (`RATE_LIMITER_URL` on control-plane). Offline / memory-only runs **skip** stack cases instead of failing CI.
+
+### Data-plane test suites
+
+Console **Testing** tab → **Data plane** (or curl against the LB / a replica) runs suites inside the rate-limiter process:
+
+| Suite | Coverage |
+|-------|----------|
+| `unit` | Matcher / subject builders / policy-cache swap / Lua algos on miniredis |
+| `functional` | Live Redis evaluate/peek, healthz/quota HTTP, match against loaded policy |
+| `all` | unit → functional |
+
+```bash
+curl -sS -X POST 'http://localhost:8080/api/v1/tests/run?suite=unit' | jq .
+curl -sS -X POST 'http://localhost:8080/api/v1/tests/run?suite=functional' | jq .
+```
+
+Policy-dependent functional cases **skip** when the cache has no namespaces (empty Mongo / not yet polled).
 
 ```bash
 ./build/build.sh up
@@ -298,9 +331,27 @@ cd ui && npm install && npm run dev
 | Page | Plane | What it does |
 |------|-------|----------------|
 | Overview | — | Compose topology + health (incl. LB + proxy replicas) |
-| Rate Limiter | Control | Namespace / config / rule CRUD + control-plane tests |
+| Rate Limiter | Control | Namespace / config / rule CRUD |
+| Testing | Both | Control-plane + data-plane unit / functional (and CP concurrency / e2e) |
+| E2E | Data | Stack automation: fixtures, Vegeta, multi-Vegeta concurrency + allow/429 analytics |
 | Mock Backend | Data | Live logs + API docs |
 | Vegeta Client | Data | Steady / ramp / burst runs against the proxy |
+
+### E2E automation API (console-api `:8095`)
+
+```bash
+curl -sS http://localhost:8095/api/v1/e2e/catalog | python3 -m json.tool | head
+
+curl -sS -X POST http://localhost:8095/api/v1/e2e/run \
+  -H 'Content-Type: application/json' \
+  -d '{"groups":["concurrency"]}'
+
+curl -sS -X POST http://localhost:8095/api/v1/e2e/run \
+  -H 'Content-Type: application/json' \
+  -d '{"setups":["fixed-token-burst","demo-seed-smoke"]}'
+```
+
+Report: allow/429 totals, proxy instance mix, upstream headers, mock log delta, per-job Vegeta metrics.
 
 Env overrides: `VITE_MOCK_URL`, `VITE_VEGETA_URL`, `VITE_PROXY_URL`, `VITE_CONTROL_PLANE_URL`, `VITE_CONSOLE_URL`.
 
@@ -308,4 +359,4 @@ Mock extras: `GET /api/v1/logs`, `GET /openapi.json`, `GET /docs`.
 
 ## Status
 
-**Done:** full demo stack — Mongo policy + control-plane CRUD/UI, Redis Lua (`fixed_token` / `fixed_window` / `sliding_window`), dual proxy replicas behind nginx, hot policy poll, `GET /api/v1/quota`, vegeta → rate-limiter → mock.
+**Done:** full demo stack — Mongo policy + control-plane CRUD/UI, Redis Lua, dual proxy replicas behind nginx, hot policy poll, quota peek, vegeta → rate-limiter → mock, **E2E automation tab** (fixtures + multi-Vegeta concurrency reports).

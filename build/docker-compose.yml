@@ -181,6 +181,12 @@ services:
       CONSOLE_API_ADDR: "0.0.0.0:8095"
       PROJECT_ROOT: /project
       DOCKER_HOST: unix:///var/run/docker.sock
+      CONTROL_PLANE_URL: "http://control-plane:8091"
+      RATE_LIMITER_URL: "http://rate-limiter:8080"
+      MOCK_SERVER_URL: "http://mock-server:8081"
+      VEGETA_URL: "http://vegeta-client:8090"
+      E2E_POLICY_WAIT: "7s"
+      E2E_VEGETA_POLL: "500ms"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ..:/project:ro

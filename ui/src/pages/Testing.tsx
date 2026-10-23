@@ -8,12 +8,18 @@ import {
   type HTTPResponseCapture,
   type TestCaseResult,
   type TestRunReport,
-  type TestSuiteId,
   type TestSuiteInfo,
 } from '../lib/controlPlaneApi'
+import {
+  DataPlaneError,
+  fetchDataPlaneTestCatalog,
+  runDataPlaneTests,
+} from '../lib/dataPlaneApi'
 import { SERVICES } from '../lib/config'
 
-const FALLBACK_SUITES: { id: TestSuiteId; label: string }[] = [
+type Plane = 'control' | 'data'
+
+const CONTROL_FALLBACK: { id: string; label: string }[] = [
   { id: 'unit', label: 'Unit' },
   { id: 'functional', label: 'Functional' },
   { id: 'concurrency', label: 'Concurrency' },
@@ -21,8 +27,14 @@ const FALLBACK_SUITES: { id: TestSuiteId; label: string }[] = [
   { id: 'all', label: 'All' },
 ]
 
+const DATA_FALLBACK: { id: string; label: string }[] = [
+  { id: 'unit', label: 'Unit' },
+  { id: 'functional', label: 'Functional' },
+  { id: 'all', label: 'All' },
+]
+
 function errMsg(e: unknown): string {
-  if (e instanceof ControlPlaneError) return e.message
+  if (e instanceof ControlPlaneError || e instanceof DataPlaneError) return e.message
   if (e instanceof Error) return e.message
   return 'unexpected error'
 }
@@ -192,38 +204,48 @@ function TestCaseCard({
   )
 }
 
+type HistoryEntry = TestRunReport & { plane: Plane }
+
 export function Testing() {
+  const [plane, setPlane] = useState<Plane>('control')
   const [catalog, setCatalog] = useState<TestSuiteInfo[]>([])
   const [suite, setSuite] = useState<string>('all')
   const [report, setReport] = useState<TestRunReport | null>(null)
-  const [history, setHistory] = useState<TestRunReport[]>([])
+  const [reportPlane, setReportPlane] = useState<Plane>('control')
+  const [history, setHistory] = useState<HistoryEntry[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState<'all' | 'passed' | 'failed' | 'skipped'>('all')
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({})
 
-  const loadCatalog = useCallback(async () => {
+  const hostUrl = plane === 'control' ? SERVICES.controlPlane.hostUrl : SERVICES.rateLimiter.hostUrl
+  const fallbackSuites = plane === 'control' ? CONTROL_FALLBACK : DATA_FALLBACK
+
+  const loadCatalog = useCallback(async (forPlane: Plane) => {
     try {
-      const data = await fetchTestCatalog()
+      const data =
+        forPlane === 'control' ? await fetchTestCatalog() : await fetchDataPlaneTestCatalog()
       setCatalog(data.suites ?? [])
       setError(null)
     } catch (e) {
+      setCatalog([])
       setError(errMsg(e))
     }
   }, [])
 
   useEffect(() => {
-    void loadCatalog()
-  }, [loadCatalog])
+    void loadCatalog(plane)
+  }, [plane, loadCatalog])
 
   async function onRun() {
     setBusy(true)
     setError(null)
     try {
-      const next = await runControlPlaneTests(suite)
+      const next =
+        plane === 'control' ? await runControlPlaneTests(suite) : await runDataPlaneTests(suite)
       setReport(next)
-      setHistory((prev) => [next, ...prev].slice(0, 12))
-      // auto-expand failures
+      setReportPlane(plane)
+      setHistory((prev) => [{ ...next, plane }, ...prev].slice(0, 12))
       const open: Record<string, boolean> = {}
       for (const r of next.results) {
         if (r.status === 'failed') open[r.id] = true
@@ -241,8 +263,8 @@ export function Testing() {
     if (catalog.length > 0) {
       return catalog.map((s) => ({ id: s.id, label: s.label.replace(/\s+tests$/i, '') || s.id }))
     }
-    return FALLBACK_SUITES
-  }, [catalog])
+    return fallbackSuites
+  }, [catalog, fallbackSuites])
 
   const selectedMeta = catalog.find((s) => s.id === suite)
 
@@ -263,25 +285,69 @@ export function Testing() {
     setOpenIds((prev) => ({ ...prev, ...next }))
   }
 
+  function switchPlane(next: Plane) {
+    if (next === plane || busy) return
+    setPlane(next)
+    setReport(null)
+    setSuite('all')
+    setFilter('all')
+    setOpenIds({})
+  }
+
   return (
     <div className="page">
       <header className="page__header">
         <div>
           <div className="page__eyebrow">
-            <PlaneTag plane="control" />
+            <PlaneTag plane={plane} />
           </div>
           <h1>Testing</h1>
           <p className="muted">
-            Control-plane unit, functional, concurrency, and e2e suites with request/response traces ·{' '}
-            <code>{SERVICES.controlPlane.hostUrl}</code>
+            {plane === 'control'
+              ? 'Control-plane unit, functional, concurrency, and e2e suites with request/response traces'
+              : 'Data-plane unit (matcher / Lua / cache) and functional (live Redis + quota / match) suites'}{' '}
+            · <code>{hostUrl}</code>
           </p>
         </div>
-        <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void loadCatalog()}>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          disabled={busy}
+          onClick={() => void loadCatalog(plane)}
+        >
           Reload catalog
         </button>
       </header>
 
       {error ? <p className="error" role="alert">{error}</p> : null}
+
+      <section className="panel">
+        <div className="panel__toolbar">
+          <h2>Plane</h2>
+        </div>
+        <div className="rl-subnav" role="tablist" aria-label="Plane">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={plane === 'control'}
+            className={`rl-subnav__btn${plane === 'control' ? ' rl-subnav__btn--active' : ''}`}
+            onClick={() => switchPlane('control')}
+            disabled={busy}
+          >
+            Control plane
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={plane === 'data'}
+            className={`rl-subnav__btn${plane === 'data' ? ' rl-subnav__btn--active' : ''}`}
+            onClick={() => switchPlane('data')}
+            disabled={busy}
+          >
+            Data plane
+          </button>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="panel__toolbar">
@@ -333,7 +399,9 @@ export function Testing() {
             <div>
               <dt>suite</dt>
               <dd>
-                <code>{report.suite}</code>
+                <code>
+                  {reportPlane}:{report.suite}
+                </code>
               </dd>
             </div>
             <div>
@@ -355,8 +423,15 @@ export function Testing() {
               <button
                 key={f}
                 type="button"
-                className={`btn btn--ghost${filter === f ? '' : ''}`}
-                style={filter === f ? { borderColor: 'var(--control)', color: 'var(--control)' } : undefined}
+                className="btn btn--ghost"
+                style={
+                  filter === f
+                    ? {
+                        borderColor: plane === 'control' ? 'var(--control)' : 'var(--data)',
+                        color: plane === 'control' ? 'var(--control)' : 'var(--data)',
+                      }
+                    : undefined
+                }
                 onClick={() => setFilter(f)}
               >
                 {f} ({f === 'all' ? report.total : report.results.filter((r) => r.status === f).length})
@@ -383,7 +458,10 @@ export function Testing() {
         </section>
       ) : (
         <section className="panel">
-          <p className="muted">No run yet. Choose a suite and click Run to see cases, assertions, and HTTP traces.</p>
+          <p className="muted">
+            No run yet. Choose a plane and suite, then click Run to see cases, assertions, and HTTP
+            traces.
+          </p>
         </section>
       )}
 
@@ -398,13 +476,17 @@ export function Testing() {
                 className={`test-history__item${report?.id === h.id ? ' test-history__item--active' : ''}`}
                 onClick={() => {
                   setReport(h)
+                  setReportPlane(h.plane)
+                  setPlane(h.plane)
                   setFilter('all')
                 }}
               >
                 <span className={`status status--${h.ok ? 'passed' : 'failed'}`}>
                   {h.ok ? 'passed' : 'failed'}
                 </span>
-                <strong>{h.suite}</strong>
+                <strong>
+                  {h.plane}:{h.suite}
+                </strong>
                 <span className="muted">
                   {h.passed}/{h.total} · {h.duration}
                 </span>

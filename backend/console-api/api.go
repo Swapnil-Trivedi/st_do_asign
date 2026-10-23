@@ -11,6 +11,7 @@ import (
 
 type api struct {
 	orch *orchestrator
+	e2e  *e2eRunner
 }
 
 func (a *api) routes(r chi.Router) {
@@ -32,6 +33,8 @@ func (a *api) routes(r chi.Router) {
 
 	r.Get("/api/v1/jobs", a.listJobs)
 	r.Get("/api/v1/jobs/{id}", a.getJob)
+
+	a.e2eRoutes(r)
 }
 
 func (a *api) catalog(w http.ResponseWriter, _ *http.Request) {

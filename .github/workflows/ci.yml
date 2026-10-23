@@ -8,13 +8,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
   backend:
     name: Backend unit tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,8 +27,45 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.3
+
       - name: Test
+        env:
+          REPORT_DIR: ${{ github.workspace }}/reports
         run: ./build/build.sh test
+
+      - name: Backend summary
+        if: always()
+        run: |
+          mkdir -p reports
+          {
+            echo "## Backend unit tests"
+            echo ""
+            if [[ -f reports/backend-coverage.txt ]]; then
+              echo "### Coverage"
+              echo '```'
+              tail -n 5 reports/backend-coverage.txt
+              echo '```'
+            fi
+            if [[ -f reports/backend-junit.xml ]]; then
+              echo ""
+              echo "JUnit: \`reports/backend-junit.xml\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload backend reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            reports/backend-junit.xml
+            reports/backend-coverage.out
+            reports/backend-coverage.html
+            reports/backend-coverage.txt
+            reports/backend-tests.json
+          if-no-files-found: warn
 
   ui:
     name: UI unit tests
@@ -49,4 +88,81 @@ jobs:
         run: npm ci
 
       - name: Test
-        run: npm test
+        run: |
+          mkdir -p ../reports
+          npm run test:ci
+
+      - name: UI summary
+        if: always()
+        working-directory: .
+        run: |
+          {
+            echo "## UI unit tests"
+            echo ""
+            if [[ -f reports/ui-junit.xml ]]; then
+              echo "JUnit: \`reports/ui-junit.xml\`"
+            else
+              echo "_No JUnit file produced_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload UI reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-reports
+          path: reports/ui-junit.xml
+          if-no-files-found: warn
+
+  publish-test-results:
+    name: Publish test report
+    needs: [backend, ui]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
+          pattern: '*-test-reports'
+          merge-multiple: true
+
+      - name: Publish JUnit results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          check_name: Unit test results
+          files: |
+            reports/**/*.xml
+            reports/*.xml
+          comment_mode: off
+          fail_on: test failures
+          report_individual_runs: true
+
+  # Single required check for branch protection — green only when all UTs pass.
+  ci-green:
+    name: Unit tests green
+    if: always()
+    needs: [backend, ui, publish-test-results]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require green unit tests
+        run: |
+          echo "backend=${{ needs.backend.result }}"
+          echo "ui=${{ needs.ui.result }}"
+          echo "publish=${{ needs.publish-test-results.result }}"
+          if [[ "${{ needs.backend.result }}" != "success" ]]; then
+            echo "::error::Backend unit tests did not pass"
+            exit 1
+          fi
+          if [[ "${{ needs.ui.result }}" != "success" ]]; then
+            echo "::error::UI unit tests did not pass"
+            exit 1
+          fi
+          echo "All unit tests passed — commit is green."
+          {
+            echo "## CI status"
+            echo ""
+            echo "✅ Backend unit tests"
+            echo "✅ UI unit tests"
+            echo "✅ Reports published (Unit test results check)"
+          } >> "$GITHUB_STEP_SUMMARY"

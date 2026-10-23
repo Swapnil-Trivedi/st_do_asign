@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ControlPlaneDocsPanel } from '../components/ControlPlaneDocsPanel'
 import { PlaneTag } from '../components/PlaneTag'
+import { RateLimiterObsDeck } from '../components/RateLimiterObsDeck'
 import {
   ControlPlaneError,
   createConfig,
@@ -23,7 +24,7 @@ import {
 } from '../lib/controlPlaneApi'
 import { SERVICES } from '../lib/config'
 
-type Section = 'configs' | 'namespaces' | 'docs'
+type Section = 'obs' | 'configs' | 'namespaces' | 'docs'
 
 function errMsg(e: unknown): string {
   if (e instanceof ControlPlaneError) return e.message
@@ -32,7 +33,7 @@ function errMsg(e: unknown): string {
 }
 
 export function RateLimiter() {
-  const [section, setSection] = useState<Section>('namespaces')
+  const [section, setSection] = useState<Section>('obs')
   const [algorithms, setAlgorithms] = useState<Algorithm[]>([])
   const [configs, setConfigs] = useState<AlgorithmConfig[]>([])
   const [namespaces, setNamespaces] = useState<Namespace[]>([])
@@ -253,16 +254,28 @@ export function RateLimiter() {
           </div>
           <h1>Rate Limiter</h1>
           <p className="muted">
-            Control-plane policies in Mongo — algorithm configs, namespaces, and match rules.
-            API: <code>{SERVICES.controlPlane.hostUrl}</code>
+            Live obs of quota enforcement + control-plane policies (Mongo). CP API:{' '}
+            <code>{SERVICES.controlPlane.hostUrl}</code> · proxy{' '}
+            <code>{SERVICES.rateLimiter.hostUrl}</code>
           </p>
         </div>
-        <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void refresh()}>
-          Refresh
-        </button>
+        {section !== 'obs' && section !== 'docs' ? (
+          <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void refresh()}>
+            Refresh
+          </button>
+        ) : null}
       </header>
 
       <div className="tabs" role="tablist" aria-label="Rate limiter sections">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={section === 'obs'}
+          className={`tabs__btn${section === 'obs' ? ' tabs__btn--active' : ''}`}
+          onClick={() => setSection('obs')}
+        >
+          Live obs
+        </button>
         <button
           type="button"
           role="tab"
@@ -292,10 +305,16 @@ export function RateLimiter() {
         </button>
       </div>
 
-      {section !== 'docs' && error ? <p className="error" role="alert">{error}</p> : null}
-      {section !== 'docs' && ok ? <p className="ok-banner">{ok}</p> : null}
+      {section !== 'docs' && section !== 'obs' && error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {section !== 'docs' && section !== 'obs' && ok ? <p className="ok-banner">{ok}</p> : null}
 
-      {section === 'docs' ? (
+      {section === 'obs' ? (
+        <RateLimiterObsDeck namespaces={namespaces} />
+      ) : section === 'docs' ? (
         <ControlPlaneDocsPanel />
       ) : section === 'configs' ? (
             <div className="split">

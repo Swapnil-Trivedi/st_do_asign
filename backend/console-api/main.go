@@ -28,7 +28,7 @@ func main() {
 		MaxAge:         300,
 	}))
 
-	api := &api{orch: orch}
+	api := &api{orch: orch, e2e: newE2ERunner()}
 	api.routes(r)
 
 	log.Printf("console-api listening on http://%s", addr)
@@ -38,6 +38,8 @@ func main() {
 	log.Printf("  POST /api/v1/services/{name}/up|down|build")
 	log.Printf("  GET  /api/v1/pipeline/status")
 	log.Printf("  GET  /api/v1/jobs/{id}")
+	log.Printf("  GET  /api/v1/e2e/catalog")
+	log.Printf("  POST /api/v1/e2e/run")
 
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("listen: %v", err)

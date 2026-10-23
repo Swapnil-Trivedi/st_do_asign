@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -52,14 +53,26 @@ func main() {
 	go cache.Start(ctx)
 
 	handler := newProxyHandler(cache, limiter)
+	tests := &selftestRunner{cache: cache, limiter: limiter}
 	instanceID := envOr("INSTANCE_ID", "1")
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Content-Type", "US-API-Key"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
 	r.Get("/healthz", handler.ServeHTTP)
 	r.Get("/api/v1/quota", handler.serveQuota)
+	r.Get("/api/v1/traffic", handler.serveTraffic)
+	r.Post("/api/v1/traffic/reset", handler.resetTraffic)
+	r.Get("/api/v1/tests/catalog", tests.listTestCatalog)
+	r.Post("/api/v1/tests/run", tests.runTests)
 	r.HandleFunc("/*", handler.ServeHTTP)
 
 	srv := &http.Server{Addr: addr, Handler: r}
@@ -67,6 +80,8 @@ func main() {
 		log.Printf("rate-limiter[%s] listening on http://%s", instanceID, addr)
 		log.Printf("  redis=%s mongo_db=%s poll=%s", redisAddr, dbName, pollInterval)
 		log.Printf("  GET /api/v1/quota?namespace=<id|label>&apiKey=…")
+		log.Printf("  GET /api/v1/traffic  POST /api/v1/traffic/reset")
+		log.Printf("  GET /api/v1/tests/catalog  POST /api/v1/tests/run?suite=unit|functional|all")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}

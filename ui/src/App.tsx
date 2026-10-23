@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar'
 import { MockBackend } from './pages/MockBackend'
 import { Overview } from './pages/Overview'
 import { RateLimiter } from './pages/RateLimiter'
+import { E2E } from './pages/E2E'
 import { Testing } from './pages/Testing'
 import { VegetaClient } from './pages/VegetaClient'
 import { PipelineProvider } from './state/PipelineContext'
@@ -26,6 +27,9 @@ function PersistentPages() {
       <div className={show('/testing')} aria-hidden={pathname !== '/testing'}>
         <Testing />
       </div>
+      <div className={show('/e2e')} aria-hidden={pathname !== '/e2e'}>
+        <E2E />
+      </div>
       <div className={show('/mock-backend')} aria-hidden={pathname !== '/mock-backend'}>
         <MockBackend />
       </div>
@@ -36,6 +40,7 @@ function PersistentPages() {
         <Route path="/" element={null} />
         <Route path="/rate-limiter" element={null} />
         <Route path="/testing" element={null} />
+        <Route path="/e2e" element={null} />
         <Route path="/mock-backend" element={null} />
         <Route path="/vegeta" element={null} />
         <Route path="/control-plane" element={<Navigate to="/rate-limiter" replace />} />

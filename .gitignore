@@ -54,3 +54,4 @@ tmp/
 .tmp/
 .cache/
 *.log
+reports/

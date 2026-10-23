@@ -114,20 +114,3 @@ func TestHeaderInOp(t *testing.T) {
 	require.Equal(t, "hdr:US-API-Key:b", got.Subject)
 }
 
-func demoSnapshot(mode string, priority int) *PolicySnapshot {
-	return &PolicySnapshot{Namespaces: []CompiledNamespace{{
-		Namespace: Namespace{
-			ID: "ns1", Label: "demo", UpstreamHost: "http://mock-server:8081",
-			Algorithm: AlgoFixedToken, MatchMode: mode, Priority: priority, Enabled: true,
-		},
-		Rules: []Rule{
-			{Match: RuleMatch{Kind: MatchHeader, Name: "US-API-Key", Op: "eq", Value: "ak_demo_1001_alpha"}},
-			{Match: RuleMatch{Kind: MatchPath, Op: "eq", Value: "/1001/deviceList"}},
-			{Match: RuleMatch{Kind: MatchMethod, Op: "eq", Value: "GET"}},
-		},
-		Config: AlgorithmConfig{
-			ID: "c1", Algorithm: AlgoFixedToken,
-			Params: map[string]any{"sustainedRps": 10, "burst": 20}, Enabled: true,
-		},
-	}}}
-}

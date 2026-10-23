@@ -52,9 +52,32 @@ step_deps() {
 step_test() {
   log "test: backend (./...)"
   need go
+  local report_dir="${REPORT_DIR:-}"
   (
     cd "${BACKEND_DIR}"
-    go test ./...
+    if [[ -n "${report_dir}" ]]; then
+      mkdir -p "${report_dir}"
+      local coverprofile="${report_dir}/backend-coverage.out"
+      local junit="${report_dir}/backend-junit.xml"
+      local jsonfile="${report_dir}/backend-tests.json"
+      if command -v gotestsum >/dev/null 2>&1; then
+        log "test: gotestsum → ${junit}"
+        gotestsum \
+          --junitfile "${junit}" \
+          --jsonfile "${jsonfile}" \
+          --format testname \
+          -- -count=1 -coverprofile="${coverprofile}" ./...
+      else
+        log "test: go test (install gotestsum for JUnit); cover → ${coverprofile}"
+        go test -count=1 -coverprofile="${coverprofile}" ./...
+      fi
+      if [[ -f "${coverprofile}" ]]; then
+        go tool cover -html="${coverprofile}" -o "${report_dir}/backend-coverage.html"
+        go tool cover -func="${coverprofile}" | tee "${report_dir}/backend-coverage.txt"
+      fi
+    else
+      go test ./...
+    fi
   )
 }
 
