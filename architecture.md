@@ -4,7 +4,7 @@
 
 | Layer | Choice | Role |
 |-------|--------|------|
-| Control plane API | **Go** | Admin config APIs: keys, paths, upstreams, rate-limit policies |
+| Control plane API | **Go** | Admin config APIs: namespaces, rules, algorithm configs |
 | Data plane proxy | **Go** | Inline reverse proxy; server-side rate limiting before forwarding |
 | Load generator | **Go (Vegeta)** | Configurable ramp / burst / constant load against the proxy |
 | Mock upstream | **Go** | Simple mock APIs with random delay (no auth) |
@@ -39,9 +39,9 @@ Admin surface for rate-limiter configuration. All durable config is written here
 
 **Registrations managed here**
 
-- **Key** — tenant / client identifier used as the rate-limit subject
-- **Path** — request path (or namespace) the limit applies to
-- **Upstream** — backend target the proxy forwards allowed traffic to
+- **Namespace** — upstream host + algorithm config + match mode / priority
+- **Rules** — header / path / path_attr / method / regex matchers bound to a namespace
+- **Algorithm config** — params such as `sustainedRps` + `burst` (or window `limit`)
 
 No request forwarding or load generation happens on this plane.
 

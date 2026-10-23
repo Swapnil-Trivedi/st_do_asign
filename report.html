@@ -416,7 +416,7 @@
           <tr><th>Layer</th><th>Choice</th><th>Role</th></tr>
         </thead>
         <tbody>
-          <tr><td>Control plane API</td><td>Go</td><td>Admin APIs: keys, paths, upstreams, rate-limit policies</td></tr>
+          <tr><td>Control plane API</td><td>Go</td><td>Admin APIs: namespaces, rules, algorithm configs</td></tr>
           <tr><td>Data plane proxy</td><td>Go</td><td>Inline reverse proxy; server-side limit before forward</td></tr>
           <tr><td>Load generator</td><td>Go (Vegeta)</td><td>Ramp / burst / constant load against the proxy</td></tr>
           <tr><td>Mock upstream</td><td>Go</td><td>Mock APIs with random delay; no auth</td></tr>
@@ -486,9 +486,9 @@
         </tbody>
       </table>
       <ul class="compact">
-        <li><strong>Key</strong> — tenant / client identifier (rate-limit subject)</li>
-        <li><strong>Path</strong> — request path / namespace the limit applies to</li>
-        <li><strong>Upstream</strong> — backend target for allowed traffic</li>
+        <li><strong>Namespace</strong> — upstream + algorithm config + match mode / priority</li>
+        <li><strong>Rules</strong> — header / path / path_attr / method / regex matchers</li>
+        <li><strong>Config</strong> — algorithm params (e.g. <code>sustainedRps</code> + <code>burst</code>)</li>
       </ul>
     </div>
   </section>
@@ -546,14 +546,14 @@
         </thead>
         <tbody>
           <tr>
-            <td>React — Control Plane tab</td>
+            <td>React — Rate Limiter</td>
             <td><span class="badge cp">Control</span></td>
-            <td>Register keys, paths, upstreams, policies; browse config</td>
+            <td>Namespaces, rules, algorithm configs; browse + test</td>
           </tr>
           <tr>
-            <td>React — Data Plane tab</td>
+            <td>React — Vegeta Client</td>
             <td><span class="badge dp">Data</span></td>
-            <td>Pick ramp / burst / constant; drive Vegeta; inspect outcomes</td>
+            <td>Pick ramp / burst / steady; drive load at proxy LB; inspect outcomes</td>
           </tr>
           <tr>
             <td>Control Plane API</td>
@@ -563,12 +563,12 @@
           <tr>
             <td>Vegeta load client</td>
             <td><span class="badge dp">Data</span></td>
-            <td>HTTP load generator aimed at the proxy</td>
+            <td>HTTP load generator aimed at rate-limiter LB</td>
           </tr>
           <tr>
-            <td>Inline reverse proxy</td>
+            <td>Inline reverse proxy ×2</td>
             <td><span class="badge dp">Data</span></td>
-            <td>Server-side limiting; multi-instance via Redis/Lua</td>
+            <td>Redis/Lua limit; quota peek API; multi-instance via shared Redis</td>
           </tr>
           <tr>
             <td>Mock backend</td>
