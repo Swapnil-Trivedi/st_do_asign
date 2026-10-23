@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Distributed Rate Limiter — Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Serif:wght@600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #1a1f24;
+      --muted: #5a6570;
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --control: #0b6e4f;
+      --control-soft: #e6f4ef;
+      --data: #1d4f91;
+      --data-soft: #e8eef7;
+      --shared: #6b5b3a;
+      --shared-soft: #f3efe6;
+      --line: #d5dce6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      scroll-snap-type: y mandatory;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #0f1215;
+      line-height: 1.4;
+    }
+
+    /* One page = one slide */
+    .slide {
+      min-height: 100vh;
+      height: 100vh;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      display: flex;
+      flex-direction: column;
+      padding: 2.25rem 3rem 2rem;
+      background: var(--bg);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slide-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    .slide-kicker {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .slide-num {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    h1 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+    }
+
+    h2 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.85rem;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 36rem;
+    }
+
+    .nav-hint {
+      position: absolute;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    /* Title slide */
+    .slide-title {
+      justify-content: center;
+      background:
+        linear-gradient(160deg, #eef2f6 0%, #f7f8fa 45%, #e8f0ec 100%);
+    }
+    .slide-title .slide-body {
+      justify-content: center;
+      max-width: 40rem;
+    }
+    .title-meta {
+      margin-top: 1.5rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .title-meta code {
+      font-size: 0.85em;
+      background: rgba(0,0,0,0.05);
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+    }
+    .pills {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .pill {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.6rem;
+      border-radius: 4px;
+    }
+    .pill.cp { background: var(--control-soft); color: var(--control); }
+    .pill.dp { background: var(--data-soft); color: var(--data); }
+
+    /* Diagram */
+    .arch {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      min-height: 0;
+    }
+    .ui-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 0.65rem 1rem;
+      border: 1px dashed #b8c2ce;
+      border-radius: 6px;
+      background: var(--card);
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+    .tabs { display: flex; gap: 0.4rem; }
+    .tab {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+    .tab.cp { background: var(--control-soft); color: var(--control); }
+    .tab.dp { background: var(--data-soft); color: var(--data); }
+
+    .planes {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+      min-height: 0;
+    }
+    .plane {
+      border-radius: 6px;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid transparent;
+      min-height: 0;
+    }
+    .plane.control { background: var(--control-soft); border-color: #b7d9cb; }
+    .plane.data { background: var(--data-soft); border-color: #b7c9e3; }
+    .plane-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.55rem;
+      flex-shrink: 0;
+    }
+    .plane.control .plane-label { color: var(--control); }
+    .plane.data .plane-label { color: var(--data); }
+    .flow {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.3rem;
+    }
+    .node {
+      background: var(--card);
+      border: 1px solid #c5cdd8;
+      border-radius: 5px;
+      padding: 0.45rem 0.6rem;
+      font-size: 0.88rem;
+      text-align: center;
+    }
+    .node small {
+      display: block;
+      color: var(--muted);
+      font-size: 0.7rem;
+      margin-top: 0.1rem;
+    }
+    .arrow {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+    .shared {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+      flex-shrink: 0;
+    }
+    .shared .node {
+      background: var(--shared-soft);
+      border-color: #d4c9b0;
+    }
+    .shared-caption {
+      grid-column: 1 / -1;
+      font-size: 0.68rem;
+      color: var(--shared);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .note {
+      font-size: 0.8rem;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 0.88rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.7rem;
+      border-bottom: 1px solid #e4e9ef;
+      vertical-align: top;
+    }
+    th {
+      background: #eef1f5;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.12rem 0.4rem;
+      border-radius: 3px;
+    }
+    .badge.cp { background: var(--control-soft); color: var(--control); }
+    .badge.dp { background: var(--data-soft); color: var(--data); }
+
+    ul.compact {
+      margin-top: 0.75rem;
+      padding-left: 1.15rem;
+    }
+    ul.compact li { margin: 0.35rem 0; }
+
+    .split-two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      flex: 1;
+      min-height: 0;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel h3 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+    .why li { margin: 0.5rem 0; }
+
+    .nongoals {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      font-size: 1.05rem;
+      max-width: 36rem;
+    }
+    .nongoals li { margin: 0.65rem 0; }
+
+    @media (max-width: 800px) {
+      .slide { padding: 1.5rem 1.25rem 2rem; height: auto; min-height: 100vh; }
+      .planes, .shared, .split-two { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SLIDE 1 -->
+  <section class="slide slide-title" id="s1">
+    <div class="slide-body">
+      <p class="slide-kicker">Architecture deck</p>
+      <h1>Distributed Rate Limiter</h1>
+      <p class="sub">Control plane configures. Data plane enforces inline. One React console, two tabs. Auth out of scope.</p>
+      <div class="pills">
+        <span class="pill cp">Control Plane</span>
+        <span class="pill dp">Data Plane</span>
+      </div>
+      <p class="title-meta">Canonical slides: <code>report.html</code> · Notes: <code>architecture.md</code></p>
+    </div>
+    <p class="nav-hint">Scroll ↓ · 1 / 7</p>
+  </section>
+
+  <!-- SLIDE 2 -->
+  <section class="slide" id="s2">
+    <div class="slide-top">
+      <p class="slide-kicker">System diagram</p>
+      <p class="slide-num">2 / 7</p>
+    </div>
+    <div class="slide-body">
+      <h2>Lean topology</h2>
+      <div class="arch">
+        <div class="ui-bar">
+          <strong>React Console</strong>
+          <div class="tabs">
+            <span class="tab cp">Control Plane</span>
+            <span class="tab dp">Data Plane</span>
+          </div>
+        </div>
+        <div class="planes">
+          <div class="plane control">
+            <div class="plane-label">Control — configure</div>
+            <div class="flow">
+              <div class="node">Control Plane API <small>Go · admin REST</small></div>
+              <div class="arrow">▼ keys · paths · upstreams · rules</div>
+              <div class="node">MySQL <small>durable registry + policies</small></div>
+            </div>
+          </div>
+          <div class="plane data">
+            <div class="plane-label">Data — enforce + validate</div>
+            <div class="flow">
+              <div class="node">Vegeta Client <small>ramp / burst / constant</small></div>
+              <div class="arrow">▼ HTTP load</div>
+              <div class="node">Inline Proxy ×2 <small>limit then forward</small></div>
+              <div class="arrow">▼ allow only</div>
+              <div class="node">Mock Backend <small>random delay · no auth</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="shared">
+          <div class="shared-caption">Shared stores</div>
+          <div class="node">MySQL <small>CP writes · DP reads</small></div>
+          <div class="node">Redis + Lua <small>DP only · atomic quotas</small></div>
+        </div>
+        <p class="note">Planes meet at MySQL. Deny stops at the proxy — mock is not called.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 3 -->
+  <section class="slide" id="s3">
+    <div class="slide-top">
+      <p class="slide-kicker">Language &amp; technology</p>
+      <p class="slide-num">3 / 7</p>
+    </div>
+    <div class="slide-body">
+      <h2>Stack</h2>
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Choice</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Control plane API</td><td>Go</td><td>Admin APIs: keys, paths, upstreams, rate-limit policies</td></tr>
+          <tr><td>Data plane proxy</td><td>Go</td><td>Inline reverse proxy; server-side limit before forward</td></tr>
+          <tr><td>Load generator</td><td>Go (Vegeta)</td><td>Ramp / burst / constant load against the proxy</td></tr>
+          <tr><td>Mock upstream</td><td>Go</td><td>Mock APIs with random delay; no auth</td></tr>
+          <tr><td>Console UI</td><td>React</td><td>One UI; Control Plane and Data Plane tabs</td></tr>
+          <tr><td>Policy store</td><td>MySQL</td><td>Durable registration and policies</td></tr>
+          <tr><td>Shared state</td><td>Redis + Lua</td><td>Atomic counters across proxy instances</td></tr>
+          <tr><td>Bootstrap</td><td>Docker Compose</td><td>Local multi-instance stack</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SLIDE 4 -->
+  <section class="slide" id="s4">
+    <div class="slide-top">
+      <p class="slide-kicker">Design rationale</p>
+      <p class="slide-num">4 / 7</p>
+    </div>
+    <div class="slide-body">
+      <h2>Why this split</h2>
+      <div class="split-two">
+        <div class="panel">
+          <h3>Ownership</h3>
+          <ul class="compact why">
+            <li><strong>MySQL</strong> owns <em>what the limit is</em> and <em>what is registered</em> (keys, paths, upstreams). Survives restarts; config changes without redeploying the proxy.</li>
+            <li><strong>Redis + Lua</strong> owns <em>how much has been consumed</em>. All proxy replicas share the same counters under contention.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Plane separation</h3>
+          <ul class="compact why">
+            <li><strong>Control plane</strong> mutates config only — no forwarding, no load generation.</li>
+            <li><strong>Data plane</strong> enforces on the request path — evaluate, then forward or deny.</li>
+            <li><strong>Auth</strong> is explicitly out of scope on both planes.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 5 -->
+  <section class="slide" id="s5">
+    <div class="slide-top">
+      <p class="slide-kicker">Control plane</p>
+      <p class="slide-num">5 / 7</p>
+    </div>
+    <div class="slide-body">
+      <h2>Configure</h2>
+      <p class="sub" style="margin-bottom: 0.85rem;">Admin surface for rate-limiter configuration. Durable config is written here and read by the data plane at evaluation time.</p>
+      <table>
+        <thead>
+          <tr><th>Component</th><th>Responsibility</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>React — Control Plane tab</td>
+            <td>Operator console for CRUD on keys, paths, upstreams, and rate-limit rules; view registration state</td>
+          </tr>
+          <tr>
+            <td>Control Plane API (Go)</td>
+            <td>REST admin APIs backing the UI; validates and persists config</td>
+          </tr>
+          <tr>
+            <td>MySQL</td>
+            <td>Source of truth for keys, path mappings, upstream targets, and policies (burst / sustained, algorithm)</td>
+          </tr>
+        </tbody>
+      </table>
+      <ul class="compact">
+        <li><strong>Key</strong> — tenant / client identifier (rate-limit subject)</li>
+        <li><strong>Path</strong> — request path / namespace the limit applies to</li>
+        <li><strong>Upstream</strong> — backend target for allowed traffic</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- SLIDE 6 -->
+  <section class="slide" id="s6">
+    <div class="slide-top">
+      <p class="slide-kicker">Data plane</p>
+      <p class="slide-num">6 / 7</p>
+    </div>
+    <div class="slide-body">
+      <h2>Enforce + validate</h2>
+      <p class="sub" style="margin-bottom: 0.85rem;">Inline reverse proxy: rate-limit decision first, then forward. No authentication. Vegeta validates under load.</p>
+      <table>
+        <thead>
+          <tr><th>Component</th><th>Responsibility</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>React — Data Plane tab</td>
+            <td>Configure and trigger Vegeta profiles; observe allow/deny / quota signals</td>
+          </tr>
+          <tr>
+            <td>Vegeta load client (Go)</td>
+            <td>Configurable <strong>ramp</strong>, <strong>burst</strong>, and <strong>constant</strong> load against the proxy</td>
+          </tr>
+          <tr>
+            <td>Inline reverse proxy (Go) ×2</td>
+            <td>Evaluate via Redis/Lua; allow → forward upstream; deny → reject with quota signals; shared state across replicas</td>
+          </tr>
+          <tr>
+            <td>Mock backend (Go)</td>
+            <td>Dummy APIs with random delay; proves forward-on-allow without business logic</td>
+          </tr>
+          <tr>
+            <td>Redis + Lua / MySQL / Compose</td>
+            <td>Atomic counters; policy + routing reads; local bootstrap of the stack</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SLIDE 7 -->
+  <section class="slide" id="s7">
+    <div class="slide-top">
+      <p class="slide-kicker">Clients &amp; scope</p>
+      <p class="slide-num">7 / 7</p>
+    </div>
+    <div class="slide-body">
+      <h2>Who does what</h2>
+      <table style="margin-bottom: 1rem;">
+        <thead>
+          <tr><th>Client</th><th>Plane</th><th>Functionality</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>React — Control Plane tab</td>
+            <td><span class="badge cp">Control</span></td>
+            <td>Register keys, paths, upstreams, policies; browse config</td>
+          </tr>
+          <tr>
+            <td>React — Data Plane tab</td>
+            <td><span class="badge dp">Data</span></td>
+            <td>Pick ramp / burst / constant; drive Vegeta; inspect outcomes</td>
+          </tr>
+          <tr>
+            <td>Control Plane API</td>
+            <td><span class="badge cp">Control</span></td>
+            <td>Admin REST; sole writer to MySQL config</td>
+          </tr>
+          <tr>
+            <td>Vegeta load client</td>
+            <td><span class="badge dp">Data</span></td>
+            <td>HTTP load generator aimed at the proxy</td>
+          </tr>
+          <tr>
+            <td>Inline reverse proxy</td>
+            <td><span class="badge dp">Data</span></td>
+            <td>Server-side limiting; multi-instance via Redis/Lua</td>
+          </tr>
+          <tr>
+            <td>Mock backend</td>
+            <td><span class="badge dp">Data</span></td>
+            <td>Upstream stand-in; random latency; no auth</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="nongoals">
+        <strong>Non-goals (current):</strong>
+        <ul class="compact">
+          <li>Authentication / authorization on either plane</li>
+          <li>Real third-party upstreams (mock only)</li>
+          <li>Adaptive limits and cloud deploy (later)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>
