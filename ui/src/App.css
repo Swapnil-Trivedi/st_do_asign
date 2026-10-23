@@ -1401,6 +1401,12 @@ code {
   display: grid;
   gap: 0.35rem;
 }
+.e2e-history__active {
+  border-color: var(--accent, #3b82f6);
+}
+.e2e-report-meta {
+  margin: 0.65rem 0 1rem;
+}
 
 @media (max-width: 480px) {
   .page__header {

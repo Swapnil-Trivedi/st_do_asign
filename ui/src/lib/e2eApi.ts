@@ -252,3 +252,81 @@ export async function runE2E(body: { setups?: string[]; groups?: string[] }) {
 export async function listE2ERuns() {
   return request<{ runs: E2EReport[] }>('/api/v1/e2e/runs')
 }
+
+export async function fetchE2ERun(id: string) {
+  return request<E2EReport>(`/api/v1/e2e/runs/${encodeURIComponent(id)}`)
+}
+
+export function e2eReportHTMLUrl(id: string) {
+  return `${base()}/api/v1/e2e/runs/${encodeURIComponent(id)}/report.html`
+}
+
+export function emptyTraffic(): TrafficStats {
+  return { total: 0, allowed: 0, rateLimited: 0, other: 0, statusCodes: {} }
+}
+
+export function emptyAnalytics(): ServiceAnalytics {
+  return {
+    proxyInstances: {},
+    rateLimitHeaders: {},
+    upstreamForwards: 0,
+    mockLogDelta: { access: 0, upstream: 0, warn: 0, info: 0, total: 0 },
+    keyMatchTrue: 0,
+  }
+}
+
+/** Normalize API payload so the report panel never crashes on partial results. */
+export function normalizeE2EReport(raw: E2EReport | null | undefined): E2EReport | null {
+  if (!raw || typeof raw !== 'object') return null
+  const summary = raw.summary ?? {
+    totalSetups: 0,
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    allowed: 0,
+    rateLimited: 0,
+    other: 0,
+    byGroupPassed: {},
+    vegetaJobs: 0,
+  }
+  const setups = (raw.setups ?? []).map((s) => ({
+    ...s,
+    traffic: s.traffic ?? emptyTraffic(),
+    analytics: {
+      ...emptyAnalytics(),
+      ...(s.analytics ?? {}),
+      proxyInstances: s.analytics?.proxyInstances ?? {},
+      mockLogDelta: s.analytics?.mockLogDelta ?? emptyAnalytics().mockLogDelta,
+      rateLimitHeaders: s.analytics?.rateLimitHeaders ?? {},
+    },
+  }))
+  return {
+    id: raw.id ?? 'unknown',
+    startedAt: raw.startedAt ?? '',
+    endedAt: raw.endedAt ?? '',
+    duration: raw.duration ?? '',
+    ok: !!raw.ok,
+    setups,
+    summary: {
+      totalSetups: summary.totalSetups ?? setups.length,
+      passed: summary.passed ?? 0,
+      failed: summary.failed ?? 0,
+      skipped: summary.skipped ?? 0,
+      allowed: summary.allowed ?? 0,
+      rateLimited: summary.rateLimited ?? 0,
+      other: summary.other ?? 0,
+      byGroupPassed: summary.byGroupPassed ?? {},
+      vegetaJobs: summary.vegetaJobs ?? 0,
+    },
+  }
+}
+
+export function downloadE2EReportJSON(report: E2EReport) {
+  const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `e2e-report-${report.id}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}

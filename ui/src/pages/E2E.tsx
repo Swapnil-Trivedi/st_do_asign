@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PlaneTag } from '../components/PlaneTag'
 import { SERVICES } from '../lib/config'
 import {
   E2EApiError,
   FALLBACK_E2E_CATALOG,
+  downloadE2EReportJSON,
+  e2eReportHTMLUrl,
+  emptyTraffic,
   fetchE2ECatalog,
   listE2ERuns,
+  normalizeE2EReport,
   runE2E,
   type E2EGroupInfo,
   type E2EReport,
@@ -42,7 +46,9 @@ function SetupCard({
   open: boolean
   onToggle: () => void
 }) {
-  const t = result.traffic
+  const t = result.traffic ?? emptyTraffic()
+  const an = result.analytics
+  const delta = an?.mockLogDelta
   return (
     <article className={`test-card test-card--${result.status}`}>
       <button type="button" className="test-card__head" onClick={onToggle}>
@@ -53,7 +59,7 @@ function SetupCard({
         </div>
         <div className="test-card__head-meta">
           <span className={`status status--${result.status}`}>{result.status}</span>
-          <span className="muted">{result.durationMs}ms</span>
+          <span className="muted">{result.durationMs ?? 0}ms</span>
         </div>
       </button>
       <p className="test-card__desc">{result.description}</p>
@@ -105,24 +111,23 @@ function SetupCard({
             <ul className="e2e-analytics">
               <li>
                 Proxy instances:{' '}
-                {Object.entries(result.analytics.proxyInstances ?? {})
+                {Object.entries(an?.proxyInstances ?? {})
                   .map(([k, v]) => `${k}=${v}`)
                   .join(', ') || '—'}
               </li>
-              <li>Upstream forwards: {result.analytics.upstreamForwards}</li>
-              <li>API key match true: {result.analytics.keyMatchTrue}</li>
+              <li>Upstream forwards: {an?.upstreamForwards ?? 0}</li>
+              <li>API key match true: {an?.keyMatchTrue ?? 0}</li>
               <li>
-                Mock log delta: access={result.analytics.mockLogDelta.access} upstream=
-                {result.analytics.mockLogDelta.upstream} total={result.analytics.mockLogDelta.total}
+                Mock log delta: access={delta?.access ?? 0} upstream={delta?.upstream ?? 0} total=
+                {delta?.total ?? 0}
               </li>
-              {result.analytics.concurrentVegetaJobs ? (
-                <li>Concurrent Vegeta jobs: {result.analytics.concurrentVegetaJobs}</li>
+              {an?.concurrentVegetaJobs ? (
+                <li>Concurrent Vegeta jobs: {an.concurrentVegetaJobs}</li>
               ) : null}
             </ul>
-            {result.analytics.rateLimitHeaders?.lastAllow ||
-            result.analytics.rateLimitHeaders?.lastDeny ? (
+            {an?.rateLimitHeaders?.lastAllow || an?.rateLimitHeaders?.lastDeny ? (
               <pre className="docs__pre">
-                {JSON.stringify(result.analytics.rateLimitHeaders, null, 2)}
+                {JSON.stringify(an.rateLimitHeaders, null, 2)}
               </pre>
             ) : null}
           </div>
@@ -208,6 +213,25 @@ export function E2E() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({})
+  const reportRef = useRef<HTMLElement | null>(null)
+
+  function adoptReport(raw: E2EReport | null | undefined) {
+    const next = normalizeE2EReport(raw)
+    if (!next) return
+    setReport(next)
+    setHistory((prev) => {
+      const rest = prev.filter((h) => h.id !== next.id)
+      return [next, ...rest].slice(0, 12)
+    })
+    const open: Record<string, boolean> = {}
+    for (const s of next.setups) {
+      if (s.status === 'failed') open[s.setupId] = true
+    }
+    setOpenIds(open)
+    requestAnimationFrame(() => {
+      reportRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -225,7 +249,11 @@ export function E2E() {
   useEffect(() => {
     void loadCatalog()
     void listE2ERuns()
-      .then((d) => setHistory(d.runs ?? []))
+      .then((d) => {
+        const runs = (d.runs ?? []).map((r) => normalizeE2EReport(r)).filter(Boolean) as E2EReport[]
+        setHistory(runs)
+        if (runs[0]) setReport(runs[0])
+      })
       .catch(() => undefined)
   }, [loadCatalog])
 
@@ -261,17 +289,24 @@ export function E2E() {
     }
     setBusy(true)
     setError(null)
+    setReport(null)
     try {
       const next = await runE2E({ setups: ids })
-      setReport(next)
-      setHistory((prev) => [next, ...prev].slice(0, 12))
-      const open: Record<string, boolean> = {}
-      for (const s of next.setups) {
-        if (s.status === 'failed') open[s.setupId] = true
-      }
-      setOpenIds(open)
+      adoptReport(next)
     } catch (e) {
-      setError(errMsg(e))
+      // Long runs can drop the response; pick up the stored report from history.
+      try {
+        const d = await listE2ERuns()
+        const latest = normalizeE2EReport(d.runs?.[0])
+        if (latest) {
+          adoptReport(latest)
+          setError(`${errMsg(e)} — showing latest stored report ${latest.id}`)
+        } else {
+          setError(errMsg(e))
+        }
+      } catch {
+        setError(errMsg(e))
+      }
     } finally {
       setBusy(false)
     }
@@ -412,32 +447,84 @@ export function E2E() {
         ) : null}
       </section>
 
-      {report ? (
-        <section className="panel">
-          <div className="panel__toolbar">
-            <h2>Report</h2>
+      <section className="panel" ref={reportRef} id="e2e-report">
+        <div className="panel__toolbar">
+          <h2>Report</h2>
+          {report ? (
+            <div className="panel__actions">
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => downloadE2EReportJSON(report)}
+              >
+                Download JSON
+              </button>
+              <a
+                className="btn btn--ghost"
+                href={e2eReportHTMLUrl(report.id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open HTML report
+              </a>
+            </div>
+          ) : null}
+        </div>
+
+        {busy && !report ? (
+          <p className="muted">Running… report will appear here when the suite finishes.</p>
+        ) : null}
+
+        {!busy && !report ? (
+          <p className="muted">No report yet — select test cases above and click Run E2E.</p>
+        ) : null}
+
+        {report ? (
+          <>
             <p
               className={`test-summary${report.ok ? ' test-summary--ok' : ' test-summary--fail'}`}
             >
-              {report.ok ? 'OK' : 'FAILED'} · {report.summary.passed}/{report.summary.totalSetups}{' '}
+              {report.ok ? 'PASSED' : 'FAILED'} · {report.summary.passed}/{report.summary.totalSetups}{' '}
               passed · allow {report.summary.allowed} · 429 {report.summary.rateLimited} · vegeta
               jobs {report.summary.vegetaJobs} · {report.duration}
             </p>
-          </div>
-          <div className="test-card-list">
-            {report.setups.map((s) => (
-              <SetupCard
-                key={s.setupId}
-                result={s}
-                open={!!openIds[s.setupId]}
-                onToggle={() => setOpenIds((prev) => ({ ...prev, [s.setupId]: !prev[s.setupId] }))}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+            <dl className="meta-list meta-list--grid e2e-report-meta">
+              <div>
+                <dt>run id</dt>
+                <dd>
+                  <code>{report.id}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>started</dt>
+                <dd>{report.startedAt ? new Date(report.startedAt).toLocaleString() : '—'}</dd>
+              </div>
+              <div>
+                <dt>failed</dt>
+                <dd>{report.summary.failed}</dd>
+              </div>
+              <div>
+                <dt>skipped</dt>
+                <dd>{report.summary.skipped}</dd>
+              </div>
+            </dl>
+            <div className="test-card-list">
+              {report.setups.map((s) => (
+                <SetupCard
+                  key={s.setupId}
+                  result={s}
+                  open={!!openIds[s.setupId]}
+                  onToggle={() =>
+                    setOpenIds((prev) => ({ ...prev, [s.setupId]: !prev[s.setupId] }))
+                  }
+                />
+              ))}
+            </div>
+          </>
+        ) : null}
+      </section>
 
-      {history.length > 1 ? (
+      {history.length > 0 ? (
         <section className="panel">
           <h2>History</h2>
           <ul className="e2e-history">
@@ -445,13 +532,11 @@ export function E2E() {
               <li key={h.id}>
                 <button
                   type="button"
-                  className="btn btn--ghost"
-                  onClick={() => {
-                    setReport(h)
-                  }}
+                  className={`btn btn--ghost${report?.id === h.id ? ' e2e-history__active' : ''}`}
+                  onClick={() => adoptReport(h)}
                 >
-                  {h.startedAt} · {h.ok ? 'ok' : 'fail'} · allow {h.summary.allowed} / 429{' '}
-                  {h.summary.rateLimited}
+                  {h.startedAt ? new Date(h.startedAt).toLocaleString() : h.id} ·{' '}
+                  {h.ok ? 'ok' : 'fail'} · allow {h.summary.allowed} / 429 {h.summary.rateLimited}
                 </button>
               </li>
             ))}
