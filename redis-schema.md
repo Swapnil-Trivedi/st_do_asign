@@ -250,6 +250,25 @@ curl -sS 'http://localhost:8080/api/v1/quota?namespace=demo-deviceList&apiKey=ak
 
 ---
 
+## Later — multi-region / Redis leases (not implemented)
+
+**Today:** one Redis primary, ≥2 proxy replicas in the same compose network. Correctness under contention is **atomic Lua `EVAL`** on shared keys (`rl:…`). That prevents N×limits across instances; it is **not** a multi-region design.
+
+**Not in this demo (check / address later):**
+
+| Gap | Why it matters |
+|-----|----------------|
+| Redis **leases** / regional token budgets | Multi-region hot path needs local spend + periodic grant/reconcile so regions don’t each enforce a full global limit (or under-use idle capacity). |
+| Cross-region reconciliation | Without it, regional counters drift; global fairness is eventual at best. |
+| Replica-read / stale-counter fencing | Reading counters from Redis replicas (or caches) can serve expired windows; need app-managed window identity or primary-only EVAL (GitHub-style “stale remaining” class of bugs). |
+| Active-Active / CRDT Redis | Optional global store path; different consistency tradeoffs than single-primary Lua. |
+
+**When revisiting:** decide lease size + TTL, coordinator ownership (home-region Redis vs control plane), fail mode when the coordinator is unreachable (drain local lease then deny), and how peek/`GET /api/v1/quota` should report leased vs global remaining.
+
+See also the short note under [`architecture.md`](architecture.md) → *Later — multi-region*.
+
+---
+
 ## Related docs
 
 - [`ratelimiter-schema.md`](ratelimiter-schema.md) — Mongo namespaces / rules / configs + data-plane API table  

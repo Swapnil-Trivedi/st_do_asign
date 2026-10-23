@@ -135,6 +135,7 @@ flowchart TB
 - Authentication / authorization on either plane
 - Real third-party upstreams (mock only for local validation)
 - Adaptive limits and DigitalOcean deploy (extensions later)
+- Multi-region Redis leases / cross-region counter reconciliation (tracked under *Later — multi-region* below and in [`redis-schema.md`](redis-schema.md))
 
 ---
 
@@ -153,8 +154,13 @@ All interview slices below are **done**. See [`README.md`](README.md) assignment
 | Hot reload | Mongo poll every `2s` | No proxy restart on rule/config change |
 | Fail mode | Fail-closed on Redis errors (deny) | Safer demo default; log clearly |
 | Observe | `GET /api/v1/quota` | Peek remaining / consumed / reset without consume |
+| Topology | **Single-region** shared Redis | Multi-instance only; **no** Redis leases / cross-region reconcile yet |
 
 Schema: [`ratelimiter-schema.md`](ratelimiter-schema.md), [`redis-schema.md`](redis-schema.md).
+
+### Later — multi-region
+
+Not addressed in this demo: Redis **leases** / regional budgets, cross-region reconciliation, or fencing against **stale counters** from replica reads. Multi-instance correctness today is single-primary Lua only. Tracking detail: [`redis-schema.md`](redis-schema.md) → *Later — multi-region / Redis leases*.
 
 ### Slice checklist
 
