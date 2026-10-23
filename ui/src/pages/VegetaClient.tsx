@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PlaneTag } from '../components/PlaneTag'
+import { ScenarioInfoModal } from '../components/ScenarioInfoModal'
 import {
   fetchVegetaDefaults,
   fetchVegetaProfiles,
@@ -54,6 +55,7 @@ export function VegetaClient() {
   const [active, setActive] = useState<RunView | null>(null)
   const [runs, setRuns] = useState<RunView[]>([])
   const [scenarios, setScenarios] = useState<VegetaScenario[]>([])
+  const [infoScenario, setInfoScenario] = useState<VegetaScenario | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -226,19 +228,41 @@ export function VegetaClient() {
               </div>
               <div className="scenario-card__foot">
                 <code className="scenario-id">{s.id}</code>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => void onScenario(s.id)}
-                >
-                  Run
-                </button>
+                <div className="btn-row">
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => setInfoScenario(s)}
+                  >
+                    Info
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={busy}
+                    onClick={() => void onScenario(s.id)}
+                  >
+                    Run
+                  </button>
+                </div>
               </div>
             </article>
           ))}
         </div>
       </section>
+
+      {infoScenario ? (
+        <ScenarioInfoModal
+          scenario={infoScenario}
+          busy={busy}
+          onClose={() => setInfoScenario(null)}
+          onRun={() => {
+            const id = infoScenario.id
+            setInfoScenario(null)
+            void onScenario(id)
+          }}
+        />
+      ) : null}
 
       <div className="split">
         <section className="panel">

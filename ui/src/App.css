@@ -182,6 +182,10 @@ code {
   margin-bottom: 1rem;
   width: 100%;
 }
+.panel--warn {
+  border-color: #e6d5a8;
+  background: #fbf8f0;
+}
 .panel--fill {
   display: flex;
   flex-direction: column;
@@ -345,6 +349,86 @@ code {
   background: transparent;
   padding: 0;
   color: var(--muted);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(15, 18, 21, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal {
+  width: min(720px, 100%);
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  background: var(--panel);
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+}
+.modal__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--line);
+}
+.modal__eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.modal__head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.25rem;
+}
+.modal__body {
+  padding: 1rem 1.15rem;
+  display: grid;
+  gap: 0.85rem;
+}
+.modal__block h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.modal__block p {
+  margin: 0;
+  line-height: 1.45;
+}
+.modal__block--intent {
+  background: var(--data-soft);
+  border: 1px solid #b7c9e3;
+  border-radius: 6px;
+  padding: 0.75rem 0.85rem;
+}
+.modal__block--intent p {
+  color: var(--ink);
+  font-weight: 500;
+}
+.modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.85rem 1.15rem;
+  border-top: 1px solid var(--line);
+}
+.docs__pre--compact {
+  margin-top: 0.25rem;
+  max-height: 140px;
 }
 
 .svc-grid {

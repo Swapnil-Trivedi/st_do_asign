@@ -97,22 +97,41 @@ func serveLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func isOpsPath(path string) bool {
+	switch path {
+	case "/healthz", "/api/v1/logs", "/openapi.json", "/docs":
+		return true
+	default:
+		return false
+	}
+}
+
 func apiKeyAccessLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
 
+		reqID := middleware.GetReqID(r.Context())
+		latency := time.Since(start).Milliseconds()
+
+		// Console health/log polling — not tenant traffic; skip ring buffer noise.
+		if isOpsPath(r.URL.Path) {
+			log.Printf(
+				"ops method=%s path=%s status=%d latency_ms=%d request_id=%s",
+				r.Method, r.URL.Path, ww.Status(), latency, reqID,
+			)
+			return
+		}
+
 		apiKey := r.Header.Get(apiKeyHeader)
 		tenantRaw := chi.URLParam(r, "tenantId")
-		reqID := middleware.GetReqID(r.Context())
-
 		msg := fmt.Sprintf(
 			"access method=%s path=%s status=%d latency_ms=%d request_id=%s tenant=%s api_key=%s",
 			r.Method,
 			r.URL.Path,
 			ww.Status(),
-			time.Since(start).Milliseconds(),
+			latency,
 			reqID,
 			tenantRaw,
 			displayKey(apiKey),

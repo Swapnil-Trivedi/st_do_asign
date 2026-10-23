@@ -72,6 +72,7 @@ export type VegetaScenario = {
   id: string
   name: string
   description: string
+  intent: string
   tags: string[]
   durationHint: string
   request: unknown

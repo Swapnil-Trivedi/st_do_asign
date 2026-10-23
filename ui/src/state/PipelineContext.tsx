@@ -103,7 +103,12 @@ export function PipelineProvider({ children }: { children: ReactNode }) {
         const job = await fn()
         trackJob(job)
       } catch (e) {
-        setLastError(e instanceof Error ? e.message : 'action failed')
+        const msg = e instanceof Error ? e.message : 'action failed'
+        const friendly =
+          msg.includes('Failed to fetch') || msg.includes('NetworkError')
+            ? 'Cannot reach console-api at http://localhost:8095 — run: ./build/build.sh up'
+            : msg
+        setLastError(friendly)
       }
     },
     [trackJob],

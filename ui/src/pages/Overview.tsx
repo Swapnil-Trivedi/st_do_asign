@@ -21,6 +21,9 @@ export function Overview() {
     lastError,
   } = usePipeline()
 
+  const consoleHealth = health['console-api'] ?? 'checking'
+  const consoleDown = consoleHealth === 'down'
+
   return (
     <div className="page">
       <header className="page__header">
@@ -36,9 +39,26 @@ export function Overview() {
         </button>
       </header>
 
+      {consoleDown ? (
+        <section className="panel panel--warn">
+          <h2>console-api is down</h2>
+          <p className="muted">
+            Start/stop buttons call <code>http://localhost:8095</code>. Bootstrap the orchestrator once
+            from the host, then use the UI for everything else:
+          </p>
+          <pre className="docs__pre">{`cd st_do_asign
+./build/build.sh up`}</pre>
+          <p className="muted">
+            That starts <code>console-api</code>, <code>mock-server</code>, and <code>vegeta-client</code> on{' '}
+            <code>st_net</code>.
+          </p>
+        </section>
+      ) : null}
+
       <section className="panel">
         <div className="panel__toolbar">
           <h2>Full pipeline</h2>
+          <HealthDot state={consoleHealth} />
         </div>
         <p className="muted" style={{ marginBottom: '0.75rem' }}>
           Managed: <code>mock-server</code>, <code>vegeta-client</code>. Does not stop{' '}
@@ -48,7 +68,7 @@ export function Overview() {
           <button
             type="button"
             className="btn"
-            disabled={isBusy('all')}
+            disabled={consoleDown || isBusy('all')}
             onClick={() => void runPipelineUp(true)}
           >
             Build &amp; start all
@@ -56,7 +76,7 @@ export function Overview() {
           <button
             type="button"
             className="btn btn--ghost"
-            disabled={isBusy('all')}
+            disabled={consoleDown || isBusy('all')}
             onClick={() => void runPipelineUp(false)}
           >
             Start all
@@ -64,7 +84,7 @@ export function Overview() {
           <button
             type="button"
             className="btn btn--ghost"
-            disabled={isBusy('all')}
+            disabled={consoleDown || isBusy('all')}
             onClick={() => void runPipelineBuild()}
           >
             Build images
@@ -72,7 +92,7 @@ export function Overview() {
           <button
             type="button"
             className="btn btn--danger"
-            disabled={isBusy('all')}
+            disabled={consoleDown || isBusy('all')}
             onClick={() => void runPipelineDown()}
           >
             Stop all
@@ -122,16 +142,16 @@ export function Overview() {
                     <button
                       type="button"
                       className="btn"
-                      disabled={busy || h === 'healthy'}
+                      disabled={consoleDown || busy}
                       onClick={() => void runServiceUp(s.id, false)}
-                      title={h === 'healthy' ? 'Already healthy' : 'Start container'}
+                      title="Start or restart container"
                     >
-                      Start
+                      {h === 'healthy' ? 'Restart' : 'Start'}
                     </button>
                     <button
                       type="button"
                       className="btn btn--ghost"
-                      disabled={busy}
+                      disabled={consoleDown || busy}
                       onClick={() => void runServiceUp(s.id, true)}
                     >
                       Rebuild &amp; start
@@ -139,7 +159,7 @@ export function Overview() {
                     <button
                       type="button"
                       className="btn btn--ghost"
-                      disabled={busy}
+                      disabled={consoleDown || busy}
                       onClick={() => void runServiceBuild(s.id)}
                     >
                       Build
@@ -147,7 +167,7 @@ export function Overview() {
                     <button
                       type="button"
                       className="btn btn--danger"
-                      disabled={busy || h === 'down' || h === 'checking'}
+                      disabled={consoleDown || busy || h === 'down'}
                       onClick={() => void runServiceDown(s.id)}
                     >
                       Stop
