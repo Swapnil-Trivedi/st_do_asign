@@ -9,6 +9,7 @@ pass.text
 # Go
 bin/
 dist/
+build/out/
 *.exe
 *.exe~
 *.dll

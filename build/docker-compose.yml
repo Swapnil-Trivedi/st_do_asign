@@ -1,0 +1,16 @@
+# Local / CI compose stack. Extend with MySQL, Redis, proxy, UI as services land.
+# mock-server is scratch-based (no in-container healthcheck binary).
+name: st-do-asign
+
+services:
+  mock-server:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.mock-server
+    image: st-do-asign/mock-server:local
+    container_name: st-mock-server
+    ports:
+      - "8081:8081"
+    environment:
+      MOCK_SERVER_ADDR: "0.0.0.0:8081"
+    restart: unless-stopped
