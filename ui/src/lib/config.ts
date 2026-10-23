@@ -47,29 +47,33 @@ export const SERVICES = {
     port: 8080,
     planned: true,
   },
-  mysql: {
-    id: 'mysql',
-    name: 'mysql',
+  mongo: {
+    id: 'mongo',
+    name: 'mongo',
     plane: 'control' as const,
-    role: 'Policy store (planned)',
-    container: 'st-mysql',
-    hostUrl: 'http://localhost:3306',
-    networkUrl: 'mysql:3306',
+    role: 'Policy store (namespaces / rules)',
+    container: 'st-mongo',
+    hostUrl: 'mongodb://localhost:27017',
+    networkUrl: 'mongo:27017',
     healthPath: '',
-    port: 3306,
-    planned: true,
+    port: 27017,
+    healthVia: 'console' as const,
+    managed: true,
+    infra: true,
   },
   redis: {
     id: 'redis',
     name: 'redis',
     plane: 'data' as const,
-    role: 'Shared quota state (planned)',
+    role: 'Shared quota state',
     container: 'st-redis',
-    hostUrl: 'http://localhost:6379',
+    hostUrl: 'redis://localhost:6379',
     networkUrl: 'redis:6379',
     healthPath: '',
     port: 6379,
-    planned: true,
+    healthVia: 'console' as const,
+    managed: true,
+    infra: true,
   },
   ui: {
     id: 'ui',
@@ -86,7 +90,7 @@ export const SERVICES = {
 
 export type ServiceDef = (typeof SERVICES)[keyof typeof SERVICES]
 
-export const MANAGED_SERVICE_IDS = ['mock-server', 'vegeta-client'] as const
+export const MANAGED_SERVICE_IDS = ['mongo', 'redis', 'mock-server', 'vegeta-client'] as const
 
 export const TOPOLOGY_EDGES: { from: string; to: string; label: string }[] = [
   { from: 'ui', to: 'console-api', label: 'pipeline control' },
@@ -96,5 +100,5 @@ export const TOPOLOGY_EDGES: { from: string; to: string; label: string }[] = [
   { from: 'vegeta-client', to: 'mock-server', label: 'load (current)' },
   { from: 'rate-limiter', to: 'mock-server', label: 'forward allow' },
   { from: 'rate-limiter', to: 'redis', label: 'Lua evaluate' },
-  { from: 'rate-limiter', to: 'mysql', label: 'read policy' },
+  { from: 'rate-limiter', to: 'mongo', label: 'read policy' },
 ]

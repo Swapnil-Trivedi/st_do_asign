@@ -13,7 +13,10 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
@@ -22,21 +25,58 @@ import (
 
 const networkName = "st_net"
 
-// Services the UI may build/start/stop (not console-api itself).
-var managedServices = []string{"mock-server", "vegeta-client"}
+// Order matters for pipeline.up: infra first, then scratch apps.
+var managedServices = []string{"mongo", "redis", "mock-server", "vegeta-client"}
+
+type volumeBind struct {
+	Name   string // named docker volume
+	Target string
+}
 
 type serviceSpec struct {
 	Name          string
 	Image         string
 	ContainerName string
-	Dockerfile    string
+	Dockerfile    string // empty ⇒ pull-only infra image (no build)
 	HostPort      string
 	ContainerPort string
 	Env           []string
+	Cmd           []string
 	NetworkAlias  string
+	NamedVolumes  []volumeBind
+	BindMounts    []string // "hostPath:containerPath:ro" relative host paths resolved against project root
+	HealthTest    []string // docker HEALTHCHECK CMD
 }
 
+func (s serviceSpec) isInfra() bool { return s.Dockerfile == "" }
+
 var serviceSpecs = map[string]serviceSpec{
+	"mongo": {
+		Name: "mongo", Image: "mongo:7.0",
+		ContainerName: "st-mongo", NetworkAlias: "mongo",
+		HostPort: "27017", ContainerPort: "27017",
+		Env: []string{
+			"MONGO_INITDB_DATABASE=rate_limiter",
+			"MONGO_INITDB_ROOT_USERNAME=root",
+			"MONGO_INITDB_ROOT_PASSWORD=stroot",
+		},
+		NamedVolumes: []volumeBind{{Name: "st-do-asign_mongo_data", Target: "/data/db"}},
+		BindMounts:   []string{"build/mongo:/docker-entrypoint-initdb.d:ro"},
+		HealthTest: []string{
+			"CMD", "mongosh", "--quiet",
+			"-u", "root", "-p", "stroot",
+			"--authenticationDatabase", "admin",
+			"--eval", "db.adminCommand('ping').ok",
+		},
+	},
+	"redis": {
+		Name: "redis", Image: "redis:7.4-alpine",
+		ContainerName: "st-redis", NetworkAlias: "redis",
+		HostPort: "6379", ContainerPort: "6379",
+		Cmd:          []string{"redis-server", "--appendonly", "yes", "--save", "60", "1000"},
+		NamedVolumes: []volumeBind{{Name: "st-do-asign_redis_data", Target: "/data"}},
+		HealthTest:   []string{"CMD", "redis-cli", "ping"},
+	},
 	"mock-server": {
 		Name: "mock-server", Image: "st-do-asign/mock-server:local",
 		ContainerName: "st-mock-server", Dockerfile: "build/Dockerfile.mock-server",
@@ -179,6 +219,9 @@ func (o *orchestrator) ensureNetwork(ctx context.Context) error {
 }
 
 func (o *orchestrator) buildImage(ctx context.Context, spec serviceSpec) (string, error) {
+	if spec.isInfra() {
+		return o.pullImage(ctx, spec)
+	}
 	tar, err := archive.TarWithOptions(o.projectRoot, &archive.TarOptions{})
 	if err != nil {
 		return "", fmt.Errorf("tar context: %w", err)
@@ -203,6 +246,16 @@ func (o *orchestrator) buildImage(ctx context.Context, spec serviceSpec) (string
 	return fmt.Sprintf("built %s\n%s", spec.Image, trimOut(text)), nil
 }
 
+func (o *orchestrator) pullImage(ctx context.Context, spec serviceSpec) (string, error) {
+	reader, err := o.docker.ImagePull(ctx, spec.Image, image.PullOptions{})
+	if err != nil {
+		return "", fmt.Errorf("pull %s: %w", spec.Image, err)
+	}
+	defer reader.Close()
+	raw, _ := io.ReadAll(reader)
+	return fmt.Sprintf("pulled %s\n%s", spec.Image, trimOut(string(raw))), nil
+}
+
 func (o *orchestrator) stopAndRemove(ctx context.Context, containerName string) error {
 	timeout := 10
 	_ = o.docker.ContainerStop(ctx, containerName, container.StopOptions{Timeout: &timeout})
@@ -210,26 +263,111 @@ func (o *orchestrator) stopAndRemove(ctx context.Context, containerName string) 
 	return nil
 }
 
+func (o *orchestrator) stopContainer(ctx context.Context, spec serviceSpec) error {
+	timeout := 15
+	if spec.isInfra() {
+		// Keep container + named volumes so Start is fast and MySQL data survives.
+		return o.docker.ContainerStop(ctx, spec.ContainerName, container.StopOptions{Timeout: &timeout})
+	}
+	return o.stopAndRemove(ctx, spec.ContainerName)
+}
+
+func (o *orchestrator) ensureVolumes(ctx context.Context, spec serviceSpec) error {
+	for _, v := range spec.NamedVolumes {
+		_, err := o.docker.VolumeInspect(ctx, v.Name)
+		if err == nil {
+			continue
+		}
+		if _, err := o.docker.VolumeCreate(ctx, volume.CreateOptions{Name: v.Name}); err != nil {
+			return fmt.Errorf("volume %s: %w", v.Name, err)
+		}
+	}
+	return nil
+}
+
 func (o *orchestrator) startContainer(ctx context.Context, spec serviceSpec) (string, error) {
 	if err := o.ensureNetwork(ctx); err != nil {
 		return "", err
 	}
+	if spec.isInfra() {
+		return o.startInfraContainer(ctx, spec)
+	}
 	_ = o.stopAndRemove(ctx, spec.ContainerName)
+	return o.createAndStart(ctx, spec)
+}
 
+func (o *orchestrator) startInfraContainer(ctx context.Context, spec serviceSpec) (string, error) {
+	c, err := o.docker.ContainerInspect(ctx, spec.ContainerName)
+	if err == nil {
+		if c.State != nil && c.State.Running {
+			timeout := 10
+			_ = o.docker.ContainerRestart(ctx, spec.ContainerName, container.StopOptions{Timeout: &timeout})
+			return fmt.Sprintf("restarted %s", spec.ContainerName), nil
+		}
+		if err := o.docker.ContainerStart(ctx, spec.ContainerName, container.StartOptions{}); err != nil {
+			return "", fmt.Errorf("start %s: %w", spec.Name, err)
+		}
+		return fmt.Sprintf("started %s", spec.ContainerName), nil
+	}
+	if _, err := o.pullImage(ctx, spec); err != nil {
+		return "", err
+	}
+	return o.createAndStart(ctx, spec)
+}
+
+func (o *orchestrator) createAndStart(ctx context.Context, spec serviceSpec) (string, error) {
+	if err := o.ensureVolumes(ctx, spec); err != nil {
+		return "", err
+	}
 	port, err := nat.NewPort("tcp", spec.ContainerPort)
 	if err != nil {
 		return "", err
 	}
-	resp, err := o.docker.ContainerCreate(ctx, &container.Config{
+
+	var mounts []mount.Mount
+	for _, v := range spec.NamedVolumes {
+		mounts = append(mounts, mount.Mount{
+			Type: mount.TypeVolume, Source: v.Name, Target: v.Target,
+		})
+	}
+	for _, b := range spec.BindMounts {
+		parts := strings.Split(b, ":")
+		if len(parts) < 2 {
+			continue
+		}
+		src := parts[0]
+		if !filepath.IsAbs(src) {
+			src = filepath.Join(o.projectRoot, src)
+		}
+		m := mount.Mount{Type: mount.TypeBind, Source: src, Target: parts[1]}
+		if len(parts) > 2 && parts[2] == "ro" {
+			m.ReadOnly = true
+		}
+		mounts = append(mounts, m)
+	}
+
+	cfg := &container.Config{
 		Image: spec.Image,
 		Env:   spec.Env,
+		Cmd:   spec.Cmd,
 		ExposedPorts: nat.PortSet{
 			port: struct{}{},
 		},
-	}, &container.HostConfig{
+	}
+	if len(spec.HealthTest) > 0 {
+		cfg.Healthcheck = &container.HealthConfig{
+			Test:     spec.HealthTest,
+			Interval: 5 * time.Second,
+			Timeout:  5 * time.Second,
+			Retries:  20,
+		}
+	}
+
+	resp, err := o.docker.ContainerCreate(ctx, cfg, &container.HostConfig{
 		PortBindings: nat.PortMap{
 			port: []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: spec.HostPort}},
 		},
+		Mounts:        mounts,
 		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
 	}, &network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
@@ -276,9 +414,10 @@ func (o *orchestrator) pipelineUp(rebuild bool) Job {
 func (o *orchestrator) pipelineDown() Job {
 	return o.startJob("pipeline.down", "all", func(ctx context.Context) (string, error) {
 		var b strings.Builder
-		for _, name := range managedServices {
-			spec := serviceSpecs[name]
-			_ = o.stopAndRemove(ctx, spec.ContainerName)
+		// Stop apps first, then infra.
+		for i := len(managedServices) - 1; i >= 0; i-- {
+			spec := serviceSpecs[managedServices[i]]
+			_ = o.stopContainer(ctx, spec)
 			b.WriteString("stopped ")
 			b.WriteString(spec.ContainerName)
 			b.WriteString("\n")
@@ -328,7 +467,12 @@ func (o *orchestrator) serviceDown(name string) (Job, error) {
 		return Job{}, err
 	}
 	return o.startJob("service.down", name, func(ctx context.Context) (string, error) {
-		_ = o.stopAndRemove(ctx, spec.ContainerName)
+		if err := o.stopContainer(ctx, spec); err != nil {
+			// Absent container is fine for Stop.
+			if !strings.Contains(err.Error(), "No such container") {
+				return "", err
+			}
+		}
 		return "stopped " + spec.ContainerName, nil
 	}), nil
 }
@@ -350,34 +494,51 @@ type composeServiceStatus struct {
 	Health string `json:"health,omitempty"`
 }
 
+func (o *orchestrator) inspectNamed(ctx context.Context, name, containerName string) composeServiceStatus {
+	c, err := o.docker.ContainerInspect(ctx, containerName)
+	if err != nil {
+		return composeServiceStatus{Name: name, State: "absent", Status: "not found"}
+	}
+	state := "unknown"
+	health := ""
+	if c.State != nil {
+		state = c.State.Status
+		if c.State.Health != nil {
+			health = c.State.Health.Status
+		}
+	}
+	return composeServiceStatus{Name: name, State: state, Status: state, Health: health}
+}
+
 func (o *orchestrator) status(ctx context.Context) ([]composeServiceStatus, string, error) {
 	var out []composeServiceStatus
 	for _, name := range managedServices {
 		spec := serviceSpecs[name]
-		c, err := o.docker.ContainerInspect(ctx, spec.ContainerName)
-		if err != nil {
-			out = append(out, composeServiceStatus{Name: name, State: "absent", Status: "not found"})
-			continue
-		}
-		state := "unknown"
-		health := ""
-		if c.State != nil {
-			state = c.State.Status
-			if c.State.Health != nil {
-				health = c.State.Health.Status
-			}
-		}
-		out = append(out, composeServiceStatus{
-			Name: name, State: state, Status: state, Health: health,
-		})
+		out = append(out, o.inspectNamed(ctx, name, spec.ContainerName))
 	}
-	if c, err := o.docker.ContainerInspect(ctx, "st-console-api"); err == nil && c.State != nil {
-		out = append(out, composeServiceStatus{
-			Name: "console-api", State: c.State.Status, Status: c.State.Status,
-		})
-	}
+	out = append(out, o.inspectNamed(ctx, "console-api", "st-console-api"))
 	raw, _ := json.MarshalIndent(out, "", "  ")
 	return out, string(raw), nil
+}
+
+// infraHealth maps service id → healthy|down for UI probes (MySQL/Redis have no HTTP /healthz).
+func (o *orchestrator) infraHealth(ctx context.Context) map[string]string {
+	out := map[string]string{}
+	for _, name := range managedServices {
+		spec := serviceSpecs[name]
+		if !spec.isInfra() {
+			continue
+		}
+		st := o.inspectNamed(ctx, name, spec.ContainerName)
+		if st.State == "running" && (st.Health == "" || st.Health == "healthy") {
+			out[name] = "healthy"
+		} else if st.State == "running" && st.Health == "starting" {
+			out[name] = "checking"
+		} else {
+			out[name] = "down"
+		}
+	}
+	return out
 }
 
 func lookupSpec(name string) (serviceSpec, error) {

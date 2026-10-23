@@ -49,8 +49,8 @@ export function Overview() {
           <pre className="docs__pre">{`cd st_do_asign
 ./build/build.sh up`}</pre>
           <p className="muted">
-            That starts <code>console-api</code>, <code>mock-server</code>, and <code>vegeta-client</code> on{' '}
-            <code>st_net</code>.
+            That starts <code>console-api</code>, <code>mongo</code>, <code>redis</code>,{' '}
+            <code>mock-server</code>, and <code>vegeta-client</code> on <code>st_net</code>.
           </p>
         </section>
       ) : null}
@@ -61,8 +61,8 @@ export function Overview() {
           <HealthDot state={consoleHealth} />
         </div>
         <p className="muted" style={{ marginBottom: '0.75rem' }}>
-          Managed: <code>mock-server</code>, <code>vegeta-client</code>. Does not stop{' '}
-          <code>console-api</code>.
+          Managed: <code>mongo</code>, <code>redis</code>, <code>mock-server</code>,{' '}
+          <code>vegeta-client</code>. Does not stop <code>console-api</code>.
         </p>
         <div className="btn-row">
           <button
@@ -106,8 +106,10 @@ export function Overview() {
         <div className="svc-grid">
           {SERVICE_LIST.map((s) => {
             const managed = isManaged(s.id)
+            const infra = 'infra' in s && !!s.infra
             const busy = isBusy(s.id) || isBusy('all')
             const h = health[s.id] ?? 'checking'
+            const running = h === 'healthy' || h === 'checking'
             return (
               <article key={s.id} className="svc-card">
                 <div className="svc-card__top">
@@ -146,24 +148,38 @@ export function Overview() {
                       onClick={() => void runServiceUp(s.id, false)}
                       title="Start or restart container"
                     >
-                      {h === 'healthy' ? 'Restart' : 'Start'}
+                      {running ? 'Restart' : 'Start'}
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      disabled={consoleDown || busy}
-                      onClick={() => void runServiceUp(s.id, true)}
-                    >
-                      Rebuild &amp; start
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      disabled={consoleDown || busy}
-                      onClick={() => void runServiceBuild(s.id)}
-                    >
-                      Build
-                    </button>
+                    {infra ? (
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        disabled={consoleDown || busy}
+                        onClick={() => void runServiceUp(s.id, true)}
+                        title="Pull image and start"
+                      >
+                        Pull &amp; start
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          disabled={consoleDown || busy}
+                          onClick={() => void runServiceUp(s.id, true)}
+                        >
+                          Rebuild &amp; start
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          disabled={consoleDown || busy}
+                          onClick={() => void runServiceBuild(s.id)}
+                        >
+                          Build
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="btn btn--danger"

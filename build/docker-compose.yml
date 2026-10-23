@@ -8,6 +8,46 @@ networks:
     driver: bridge
 
 services:
+  mongo:
+    image: mongo:7.0
+    container_name: st-mongo
+    networks:
+      - st_net
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: rate_limiter
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_ROOT_USER:-root}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASSWORD:-stroot}"
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "-u", "root", "-p", "stroot", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: st-redis
+    networks:
+      - st_net
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
   mock-server:
     build:
       context: ..
@@ -58,3 +98,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ..:/project:ro
     restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:

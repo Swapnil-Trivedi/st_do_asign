@@ -63,3 +63,11 @@ export async function fetchPipelineStatus() {
     error?: string
   }>
 }
+
+export async function fetchInfraHealth() {
+  const res = await fetch(`${base()}/api/v1/infra/health`)
+  if (!res.ok) throw new Error(`infra health ${res.status}`)
+  return res.json() as Promise<{ services: Record<string, HealthState> }>
+}
+
+type HealthState = 'healthy' | 'down' | 'planned' | 'checking'

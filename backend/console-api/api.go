@@ -20,6 +20,7 @@ func (a *api) routes(r chi.Router) {
 
 	r.Get("/api/v1/catalog", a.catalog)
 	r.Get("/api/v1/pipeline/status", a.pipelineStatus)
+	r.Get("/api/v1/infra/health", a.infraHealth)
 
 	r.Post("/api/v1/pipeline/up", a.pipelineUp)
 	r.Post("/api/v1/pipeline/down", a.pipelineDown)
@@ -39,12 +40,12 @@ func (a *api) catalog(w http.ResponseWriter, _ *http.Request) {
 		"projectRoot":     a.orch.projectRoot,
 		"runtime":         "scratch + Docker Engine API (docker.sock)",
 		"actions": map[string]string{
-			"pipeline.up":    "Build (optional) and start all managed services",
-			"pipeline.down":  "Stop all managed services",
-			"pipeline.build": "Build scratch images for all managed services",
-			"service.up":     "Start one service (optional rebuild)",
+			"pipeline.up":    "Pull/build (optional) and start mongo, redis, mock-server, vegeta-client",
+			"pipeline.down":  "Stop all managed services (infra stop keeps volumes)",
+			"pipeline.build": "Build scratch images / pull infra images",
+			"service.up":     "Start one service (rebuild or pull optional)",
 			"service.down":   "Stop one service",
-			"service.build":  "Build one scratch service image",
+			"service.build":  "Build scratch image or pull infra image",
 		},
 	})
 }
@@ -66,6 +67,14 @@ func (a *api) pipelineStatus(w http.ResponseWriter, _ *http.Request) {
 		"ok":       true,
 		"services": services,
 		"raw":      raw,
+	})
+}
+
+func (a *api) infraHealth(w http.ResponseWriter, _ *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"services": a.orch.infraHealth(ctx),
 	})
 }
 

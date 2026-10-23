@@ -96,7 +96,9 @@ step_up() {
   log "up: docker compose (network: st_net)"
   need docker
   compose up -d --build
-  log "network DNS: mock-server, vegeta-client, console-api"
+  log "network DNS: mongo, redis, mock-server, vegeta-client, console-api"
+  log "mongo          → localhost:27017 (db=rate_limiter)"
+  log "redis          → localhost:6379"
   log "mock-server    → http://localhost:8081"
   log "vegeta-client  → http://localhost:8090"
   log "console-api    → http://localhost:8095  (UI pipeline control)"

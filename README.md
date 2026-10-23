@@ -5,6 +5,7 @@ Production-style rate limiting stack: **control plane** (config) + **data plane*
 | Doc | Purpose |
 |-----|---------|
 | [`architecture.md`](architecture.md) | Design notes |
+| [`ratelimiter-schema.md`](ratelimiter-schema.md) | MongoDB control-plane schema |
 | [`report.html`](report.html) | Slide deck (open in browser) |
 
 ## Prerequisites
@@ -62,9 +63,12 @@ All services join the bridge network **`st_net`** and reach each other by **serv
 
 | Service | Host port | In-network URL |
 |---------|-----------|----------------|
+| `mongo` | `27017` | `mongo:27017` (db `rate_limiter`) |
+| `redis` | `6379` | `redis:6379` |
 | `mock-server` | `8081` | `http://mock-server:8081` |
 | `vegeta-client` | `8090` | `http://vegeta-client:8090` |
-| `rate-limiter` (soon) | `8080` | `http://rate-limiter:8080` |
+| `console-api` | `8095` | `http://console-api:8095` |
+| `rate-limiter` (next) | `8080` | `http://rate-limiter:8080` |
 
 ```bash
 ./build/build.sh up
@@ -77,6 +81,16 @@ Env for vegeta (compose default until the proxy exists):
 | `RATE_LIMITER_URL` | `http://mock-server:8081` | Base URL loadgen attacks (switch to `http://rate-limiter:8080` later) |
 | `VEGETA_CLIENT_ADDR` | `0.0.0.0:8090` | Control API listen address |
 | `MOCK_SERVER_ADDR` | `0.0.0.0:8081` | Mock upstream listen address |
+| `MONGO_ROOT_USER` / `MONGO_ROOT_PASSWORD` | `root` / `stroot` | Mongo root (local demo) |
+
+Control-plane schema: [`ratelimiter-schema.md`](ratelimiter-schema.md).  
+Seed: [`build/mongo/001_seed.js`](build/mongo/001_seed.js) (first Mongo volume init).
+
+```bash
+# smoke infra
+docker exec st-mongo mongosh -u root -p stroot --authenticationDatabase admin rate_limiter --eval 'db.namespaces.find().toArray()'
+docker exec st-redis redis-cli PING
+```
 
 All runtime images are **`FROM scratch`** (mock-server, vegeta-client, console-api).  
 `console-api` talks to the Docker Engine over a mounted `docker.sock` — no Docker CLI / Alpine in the image (~10MB).

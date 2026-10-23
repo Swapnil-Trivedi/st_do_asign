@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { checkHealth, type HealthState } from '../lib/api'
 import {
+  fetchInfraHealth,
   getConsoleJob,
   pipelineBuild,
   pipelineDown,
@@ -68,8 +69,19 @@ export function PipelineProvider({ children }: { children: ReactNode }) {
 
   const refreshHealth = useCallback(async () => {
     const next: Record<string, HealthState> = {}
+    let infra: Record<string, HealthState> = {}
+    try {
+      const data = await fetchInfraHealth()
+      infra = data.services ?? {}
+    } catch {
+      /* console-api down — infra probes fail closed below */
+    }
     await Promise.all(
       SERVICE_LIST.map(async (s) => {
+        if ('healthVia' in s && s.healthVia === 'console') {
+          next[s.id] = infra[s.id] ?? 'down'
+          return
+        }
         next[s.id] = await checkHealth(
           s.hostUrl,
           s.healthPath,
