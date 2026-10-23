@@ -97,6 +97,13 @@ export function RateLimiter() {
     void refresh()
   }, [refresh])
 
+  // Keep namespace list fresh while watching the obs deck (gauges bind to labels).
+  useEffect(() => {
+    if (section !== 'obs') return
+    const id = window.setInterval(() => void refresh(), 4000)
+    return () => window.clearInterval(id)
+  }, [section, refresh])
+
   useEffect(() => {
     if (!selectedNs) {
       setRules([])
@@ -312,9 +319,12 @@ export function RateLimiter() {
       ) : null}
       {section !== 'docs' && section !== 'obs' && ok ? <p className="ok-banner">{ok}</p> : null}
 
-      {section === 'obs' ? (
-        <RateLimiterObsDeck namespaces={namespaces} />
-      ) : section === 'docs' ? (
+      {/* Keep obs deck mounted so the 1s poll survives tab switches within this page. */}
+      <div hidden={section !== 'obs'} className={section === 'obs' ? undefined : 'page-slot--hidden'}>
+        <RateLimiterObsDeck namespaces={namespaces} active={section === 'obs'} />
+      </div>
+
+      {section === 'docs' ? (
         <ControlPlaneDocsPanel />
       ) : section === 'configs' ? (
             <div className="split">
@@ -424,7 +434,7 @@ export function RateLimiter() {
                 )}
               </section>
             </div>
-          ) : (
+          ) : section === 'namespaces' ? (
             <>
               <div className="split">
                 <section className="panel">
@@ -701,7 +711,7 @@ export function RateLimiter() {
                 )}
               </section>
             </>
-          )}
+          ) : null}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Namespace } from '../lib/controlPlaneApi'
 import {
   buildRateSeries,
+  clearQuotaGauges,
   fetchMergedTraffic,
   peekQuota,
   resetTrafficCounters,
@@ -18,22 +19,23 @@ function Sparkline({
 }: {
   series: { t: number; allow: number; deny: number }[]
 }) {
-  const w = 320
-  const h = 56
+  const w = 560
+  const h = 120
   const max = Math.max(1, ...series.map((s) => s.allow + s.deny))
   const step = w / Math.max(1, series.length - 1)
+  const pad = 6
 
   const allowPts = series
-    .map((s, i) => `${i * step},${h - (s.allow / max) * (h - 4) - 2}`)
+    .map((s, i) => `${i * step},${h - (s.allow / max) * (h - pad * 2) - pad}`)
     .join(' ')
   const denyPts = series
-    .map((s, i) => `${i * step},${h - (s.deny / max) * (h - 4) - 2}`)
+    .map((s, i) => `${i * step},${h - (s.deny / max) * (h - pad * 2) - pad}`)
     .join(' ')
 
   return (
     <svg className="obs-spark" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="allow/deny RPS">
-      <polyline fill="none" stroke="var(--healthy)" strokeWidth="2" points={allowPts} />
-      <polyline fill="none" stroke="var(--down)" strokeWidth="2" points={denyPts} />
+      <polyline fill="none" stroke="var(--healthy)" strokeWidth="2.5" points={allowPts} />
+      <polyline fill="none" stroke="var(--down)" strokeWidth="2.5" points={denyPts} />
     </svg>
   )
 }
@@ -59,7 +61,13 @@ function StatCard({
   )
 }
 
-export function RateLimiterObsDeck({ namespaces }: { namespaces: Namespace[] }) {
+export function RateLimiterObsDeck({
+  namespaces,
+  active = true,
+}: {
+  namespaces: Namespace[]
+  active?: boolean
+}) {
   const [counters, setCounters] = useState<TrafficCounters>({
     allowed: 0,
     denied: 0,
@@ -80,11 +88,23 @@ export function RateLimiterObsDeck({ namespaces }: { namespaces: Namespace[] }) 
   const [paused, setPaused] = useState(false)
   const [apiKey, setApiKey] = useState(DEMO_API_KEY)
   const [lastTick, setLastTick] = useState<string | null>(null)
+  const [clearingQuota, setClearingQuota] = useState(false)
   const prevTotal = useRef(0)
+  const inFlight = useRef(false)
+  const namespacesRef = useRef(namespaces)
+  const apiKeyRef = useRef(apiKey)
   const [rps, setRps] = useState(0)
 
+  namespacesRef.current = namespaces
+  apiKeyRef.current = apiKey
+
   const tick = useCallback(async () => {
+    if (inFlight.current) return
+    inFlight.current = true
     try {
+      const nsList = namespacesRef.current
+      const key = apiKeyRef.current.trim()
+
       const merged = await fetchMergedTraffic(120)
       setCounters(merged.counters)
       setByNamespace(merged.byNamespace)
@@ -102,37 +122,43 @@ export function RateLimiterObsDeck({ namespaces }: { namespaces: Namespace[] }) 
       if (prevTotal.current > 0 && delta >= 0) setRps(delta)
       prevTotal.current = merged.counters.total
       setLastTick(new Date().toLocaleTimeString())
-      setError(null)
 
-      const enabled = namespaces.filter((n) => n.enabled).slice(0, 6)
-      if (enabled.length > 0 && apiKey.trim()) {
-        const peeks = await Promise.all(
-          enabled.map((n) => peekQuota(n.label, apiKey.trim()).catch((e) => ({
-            namespace: n.label,
-            algorithm: n.algorithm,
-            subject: '',
-            limit: 0,
-            remaining: 0,
-            consumed: 0,
-            resetMs: 0,
-            error: e instanceof Error ? e.message : 'peek failed',
-          }))),
-        )
+      const live = merged.snapshots.some((s) => s.data != null)
+      setError(live ? null : 'proxies unreachable — is rate-limiter-a/b up?')
+
+      const enabled = nsList.filter((n) => n.enabled).slice(0, 6)
+      if (enabled.length > 0 && key) {
+        const peeks = await Promise.all(enabled.map((n) => peekQuota(n.label, key)))
         setQuotas(peeks)
       } else {
         setQuotas([])
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'obs poll failed')
+      setLastTick(new Date().toLocaleTimeString())
+    } finally {
+      inFlight.current = false
     }
-  }, [namespaces, apiKey])
+  }, [])
 
   useEffect(() => {
-    if (paused) return
-    void tick()
-    const id = window.setInterval(() => void tick(), 1000)
-    return () => window.clearInterval(id)
-  }, [tick, paused])
+    if (!active || paused) return
+    let cancelled = false
+    const run = () => {
+      if (!cancelled) void tick()
+    }
+    run()
+    const id = window.setInterval(run, 1000)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') run()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [tick, paused, active])
 
   const series = useMemo(() => buildRateSeries(events, 30), [events])
   const denyRatio =
@@ -145,6 +171,20 @@ export function RateLimiterObsDeck({ namespaces }: { namespaces: Namespace[] }) 
     prevTotal.current = 0
     setRps(0)
     void tick()
+  }
+
+  async function onClearGauges() {
+    if (!apiKey.trim()) return
+    setClearingQuota(true)
+    setError(null)
+    try {
+      await clearQuotaGauges(apiKey.trim())
+      await tick()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'quota clear failed')
+    } finally {
+      setClearingQuota(false)
+    }
   }
 
   return (
@@ -209,10 +249,21 @@ export function RateLimiterObsDeck({ namespaces }: { namespaces: Namespace[] }) 
         <section className="panel">
           <div className="panel__toolbar">
             <h2>Quota gauges</h2>
-            <label className="obs-key-field">
-              <span>API key</span>
-              <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-            </label>
+            <div className="btn-row">
+              <label className="obs-key-field">
+                <span>API key</span>
+                <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+              </label>
+              <button
+                type="button"
+                className="btn btn--ghost btn--tiny"
+                disabled={clearingQuota || !apiKey.trim() || namespaces.length === 0}
+                onClick={() => void onClearGauges()}
+                title="Delete Redis quota keys for this API key across all namespaces"
+              >
+                {clearingQuota ? 'Clearing…' : 'Clear gauges'}
+              </button>
+            </div>
           </div>
           {namespaces.length === 0 ? (
             <p className="muted">No namespaces yet — create one to peek Redis quota.</p>

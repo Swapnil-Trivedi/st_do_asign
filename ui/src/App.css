@@ -1489,16 +1489,18 @@ code {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.2rem;
-  min-width: 200px;
+  gap: 0.3rem;
+  min-width: min(560px, 100%);
+  flex: 1 1 360px;
 }
-.obs-spark-label { font-size: 0.72rem; }
+.obs-spark-label { font-size: 0.78rem; }
 .obs-spark {
-  width: min(320px, 100%);
-  height: 56px;
+  width: 100%;
+  max-width: 560px;
+  height: 120px;
   background: #12171c;
-  border-radius: 6px;
-  padding: 4px;
+  border-radius: 8px;
+  padding: 6px;
 }
 .obs-deck__grid {
   display: grid;

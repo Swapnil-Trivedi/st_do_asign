@@ -100,6 +100,38 @@ func (l *Limiter) Evaluate(ctx context.Context, algorithm, namespaceID, subject 
 	}
 }
 
+// Reset deletes Redis quota state for a namespace+subject (exact key, plus
+// fixed_window window-id suffixes). Returns number of keys removed.
+func (l *Limiter) Reset(ctx context.Context, algorithm, namespaceID, subject string) (int64, error) {
+	key := redisKey(algorithm, namespaceID, subject)
+	if algorithm == AlgoFixedWindow {
+		var (
+			cursor  uint64
+			deleted int64
+		)
+		pattern := key + "*"
+		for {
+			keys, next, err := l.rdb.Scan(ctx, cursor, pattern, 64).Result()
+			if err != nil {
+				return deleted, err
+			}
+			if len(keys) > 0 {
+				n, err := l.rdb.Del(ctx, keys...).Result()
+				if err != nil {
+					return deleted, err
+				}
+				deleted += n
+			}
+			cursor = next
+			if cursor == 0 {
+				break
+			}
+		}
+		return deleted, nil
+	}
+	return l.rdb.Del(ctx, key).Result()
+}
+
 // Peek returns current quota state without consuming a unit.
 func (l *Limiter) Peek(ctx context.Context, algorithm, namespaceID, subject string, params map[string]any) (QuotaState, error) {
 	key := redisKey(algorithm, namespaceID, subject)

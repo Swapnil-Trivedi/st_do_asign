@@ -61,14 +61,22 @@ const EMPTY_COUNTERS: TrafficCounters = {
   total: 0,
 }
 
-async function fetchTrafficFrom(base: string, limit = 80): Promise<TrafficSnapshot | null> {
+async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 2500): Promise<T | null> {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const res = await fetch(`${base}/api/v1/traffic?limit=${limit}`)
+    const res = await fetch(url, { ...init, signal: ctrl.signal })
     if (!res.ok) return null
-    return (await res.json()) as TrafficSnapshot
+    return (await res.json()) as T
   } catch {
     return null
+  } finally {
+    window.clearTimeout(timer)
   }
+}
+
+async function fetchTrafficFrom(base: string, limit = 80): Promise<TrafficSnapshot | null> {
+  return fetchJSON<TrafficSnapshot>(`${base}/api/v1/traffic?limit=${limit}`)
 }
 
 export async function fetchMergedTraffic(limit = 100): Promise<{
@@ -82,7 +90,10 @@ export async function fetchMergedTraffic(limit = 100): Promise<{
   const targets = [
     { id: 'a', url: SERVICES.rateLimiterA.hostUrl },
     { id: 'b', url: SERVICES.rateLimiterB.hostUrl },
+    // LB sample — useful if a direct replica port is down; tagged so we don't double-count.
+    { id: 'lb', url: SERVICES.rateLimiter.hostUrl },
   ]
+
   const snapshots = await Promise.all(
     targets.map(async (t) => ({
       id: t.id,
@@ -97,7 +108,12 @@ export async function fetchMergedTraffic(limit = 100): Promise<{
   let policyNamespaces = 0
   let policyLoaded = false
 
-  for (const s of snapshots) {
+  // Prefer replica A+B for counters (authoritative). Fall back to LB if both down.
+  const replicaSnaps = snapshots.filter((s) => s.id === 'a' || s.id === 'b')
+  const anyReplica = replicaSnaps.some((s) => s.data != null)
+  const counterSources = anyReplica ? replicaSnaps : snapshots.filter((s) => s.id === 'lb')
+
+  for (const s of counterSources) {
     if (!s.data) continue
     const c = s.data.counters
     counters.allowed += c.allowed ?? 0
@@ -112,6 +128,16 @@ export async function fetchMergedTraffic(limit = 100): Promise<{
       cur.denied += v.denied
       byNamespace[ns] = cur
     }
+  }
+
+  for (const s of snapshots) {
+    if (!s.data) continue
+    // Deduplicate events: skip LB events when we already have replica streams.
+    if (s.id === 'lb' && anyReplica) {
+      if (s.data.policy?.loaded) policyLoaded = true
+      policyNamespaces = Math.max(policyNamespaces, s.data.policy?.namespaces ?? 0)
+      continue
+    }
     events.push(...(s.data.events ?? []))
     if (s.data.policy?.loaded) policyLoaded = true
     policyNamespaces = Math.max(policyNamespaces, s.data.policy?.namespaces ?? 0)
@@ -120,7 +146,7 @@ export async function fetchMergedTraffic(limit = 100): Promise<{
   events.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
 
   return {
-    snapshots,
+    snapshots: snapshots.filter((s) => s.id === 'a' || s.id === 'b'),
     counters,
     byNamespace,
     events: events.slice(0, limit),
@@ -131,16 +157,17 @@ export async function fetchMergedTraffic(limit = 100): Promise<{
 
 export async function resetTrafficCounters(): Promise<void> {
   await Promise.allSettled([
-    fetch(`${SERVICES.rateLimiterA.hostUrl}/api/v1/traffic/reset`, { method: 'POST' }),
-    fetch(`${SERVICES.rateLimiterB.hostUrl}/api/v1/traffic/reset`, { method: 'POST' }),
+    fetchJSON(`${SERVICES.rateLimiterA.hostUrl}/api/v1/traffic/reset`, { method: 'POST' }),
+    fetchJSON(`${SERVICES.rateLimiterB.hostUrl}/api/v1/traffic/reset`, { method: 'POST' }),
   ])
 }
 
 export async function peekQuota(namespace: string, apiKey: string): Promise<QuotaPeek> {
   const q = new URLSearchParams({ namespace, apiKey })
-  const res = await fetch(`${SERVICES.rateLimiter.hostUrl}/api/v1/quota?${q}`)
-  const data = (await res.json().catch(() => ({}))) as QuotaPeek & { error?: string }
-  if (!res.ok) {
+  const data = await fetchJSON<QuotaPeek & { error?: string }>(
+    `${SERVICES.rateLimiter.hostUrl}/api/v1/quota?${q}`,
+  )
+  if (!data || data.error) {
     return {
       namespace,
       algorithm: '',
@@ -149,10 +176,30 @@ export async function peekQuota(namespace: string, apiKey: string): Promise<Quot
       remaining: 0,
       consumed: 0,
       resetMs: 0,
-      error: data.error ?? `quota ${res.status}`,
+      error: data?.error ?? 'quota unreachable',
     }
   }
   return data
+}
+
+/** Clear Redis quota for the API key across all loaded namespaces (LB → any replica). */
+export async function clearQuotaGauges(apiKey: string): Promise<{ deleted: number }> {
+  const q = new URLSearchParams({ apiKey })
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), 5000)
+  try {
+    const res = await fetch(`${SERVICES.rateLimiter.hostUrl}/api/v1/quota/reset?${q}`, {
+      method: 'POST',
+      signal: ctrl.signal,
+    })
+    const data = (await res.json().catch(() => ({}))) as { deleted?: number; error?: string }
+    if (!res.ok) {
+      throw new Error(data.error ?? `quota reset ${res.status}`)
+    }
+    return { deleted: data.deleted ?? 0 }
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 /** Build RPS buckets (allow/deny) for the last `windowSec` seconds from events. */

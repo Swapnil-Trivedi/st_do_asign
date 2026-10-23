@@ -62,13 +62,15 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Content-Type", "US-API-Key"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 	r.Get("/healthz", handler.ServeHTTP)
 	r.Get("/api/v1/quota", handler.serveQuota)
+	r.Delete("/api/v1/quota", handler.serveQuota)
+	r.Post("/api/v1/quota/reset", handler.resetQuota)
 	r.Get("/api/v1/traffic", handler.serveTraffic)
 	r.Post("/api/v1/traffic/reset", handler.resetTraffic)
 	r.Get("/api/v1/tests/catalog", tests.listTestCatalog)
@@ -79,7 +81,8 @@ func main() {
 	go func() {
 		log.Printf("rate-limiter[%s] listening on http://%s", instanceID, addr)
 		log.Printf("  redis=%s mongo_db=%s poll=%s", redisAddr, dbName, pollInterval)
-		log.Printf("  GET /api/v1/quota?namespace=<id|label>&apiKey=…")
+		log.Printf("  GET|DELETE /api/v1/quota?namespace=<id|label>&apiKey=…")
+		log.Printf("  POST /api/v1/quota/reset?apiKey=…  (all namespaces)")
 		log.Printf("  GET /api/v1/traffic  POST /api/v1/traffic/reset")
 		log.Printf("  GET /api/v1/tests/catalog  POST /api/v1/tests/run?suite=unit|functional|all")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
